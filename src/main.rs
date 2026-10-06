@@ -20,16 +20,17 @@ async fn connect_db() -> Result<AnyPool, sqlx::Error> {
 
     let database_url = "sqlite://spool.db?mode=rwc";
 
-    Ok(AnyPoolOptions::new()
+    AnyPoolOptions::new()
         .max_connections(5)
         .connect(database_url)
         .await
-        .unwrap()) // tuxzilla reminder, add actual error handling
 }
 
 #[tokio::main]
-async fn main() {
-    let db = connect_db().await;
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let db = connect_db().await?;
+
+    sqlx::migrate!("./migrations").run(&db).await?;
 
     let app = Router::new()
         .route("/", get(|| async { "hello from spool" }))
@@ -38,7 +39,9 @@ async fn main() {
             "/upload",
             post(download::files::download).layer(DefaultBodyLimit::max(1024 * 1024 * 1024)), // need to be configurable
         )
-        .with_state(State { db: db.unwrap() }); // same with this here
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap(); // and here
-    axum::serve(listener, app).await.unwrap(); // !!!!!!!!!!!!!!
+        .with_state(State { db });
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
+    axum::serve(listener, app).await?;
+
+    Ok(())
 }

@@ -71,10 +71,7 @@ pub async fn download(
         .ok()
         .and_then(|inner: Result<_, std::io::Error>| inner.ok());
 
-    let (file, hash_hex, file_size_bytes) = if let Some((file, hash_hex, file_size_bytes)) = result
-    {
-        (file, hash_hex, file_size_bytes)
-    } else {
+    let Some((file, hash_hex, file_size_bytes)) = result else {
         return Err(StatusCode::INTERNAL_SERVER_ERROR.into());
     };
 

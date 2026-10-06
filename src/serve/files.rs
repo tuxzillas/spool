@@ -7,22 +7,20 @@ use axum::{
 use tokio::fs::File;
 use tokio_util::io::ReaderStream;
 
-use crate::State;
+use crate::{State, types::ErrorStatus};
 
 use crate::serve::db::get_file_mimetype;
 
 pub async fn serve(
     axum::extract::State(state): axum::extract::State<State>,
     Path(file_hash): Path<String>,
-) -> impl IntoResponse {
-    let file = match File::open(format!("/home/tuxzilla/Projects/spool-storage/{file_hash}")).await // W hardcoded path
-    {
-        Ok(file) => file,
-        Err(_) => return Err((StatusCode::NOT_FOUND, "File not found")),
+) -> Result<impl IntoResponse, ErrorStatus> {
+    let Ok(file) = File::open(format!("/home/tuxzilla/Projects/spool-storage/{file_hash}")).await
+    else {
+        return Err((StatusCode::NOT_FOUND, "File not found").into());
     };
-
-    let Some(mimetype) = get_file_mimetype(&state.db, &file_hash).await.unwrap() else {
-        return Err((StatusCode::NOT_FOUND, "File not found"));
+    let Some(mimetype) = get_file_mimetype(&state.db, &file_hash).await? else {
+        return Err((StatusCode::NOT_FOUND, "File not found").into());
     };
 
     let stream = ReaderStream::new(file);

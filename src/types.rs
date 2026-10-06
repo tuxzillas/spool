@@ -61,6 +61,9 @@ impl From<sqlx::Error> for ErrorStatus {
     }
 }
 
+// note to self
+// the USER needs a pretty error message that doesnt leak internal details
+// the server needs to log the error for debugging ofc
 impl IntoResponse for ErrorStatus {
     fn into_response(self) -> Response {
         println!("ERROR: {} {}", self.code, self.message);
