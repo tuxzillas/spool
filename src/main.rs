@@ -33,7 +33,7 @@ async fn main() {
 
     let app = Router::new()
         .route("/", get(|| async { "hello from spool" }))
-        .route("/{file_hash}", get(serve::files::send_image))
+        .route("/{file_hash}", get(serve::files::serve))
         .route(
             "/upload",
             post(download::files::download).layer(DefaultBodyLimit::max(1024 * 1024 * 1024)), // need to be configurable
