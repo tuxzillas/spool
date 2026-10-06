@@ -1,13 +1,13 @@
-use sqlx::AnyPool;
+use sqlx::SqlitePool;
 use sqlx::query;
 
 pub async fn insert_file(
-    db: &AnyPool,
+    db: &SqlitePool,
     hash: &str,
     mimetype: &str,
     file_size_bytes: i64,
 ) -> Result<bool, sqlx::Error> {
-    let result = query(
+    let result = query!(
         r"
         INSERT INTO files (
             hash_filename,
@@ -17,10 +17,10 @@ pub async fn insert_file(
         VALUES (?, ?, ?)
         ON CONFLICT(hash_filename) DO NOTHING
         ",
+        hash,
+        mimetype,
+        file_size_bytes
     )
-    .bind(hash)
-    .bind(mimetype)
-    .bind(file_size_bytes)
     .execute(db)
     .await?;
 

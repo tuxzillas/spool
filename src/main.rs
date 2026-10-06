@@ -4,7 +4,7 @@ use axum::{
     routing::{get, post},
 };
 
-use sqlx::{AnyPool, any::AnyPoolOptions};
+use sqlx::SqlitePool;
 
 mod download;
 mod serve;
@@ -12,18 +12,15 @@ mod types;
 
 #[derive(Clone)]
 pub struct State {
-    db: AnyPool,
+    db: SqlitePool,
 }
 
-async fn connect_db() -> Result<AnyPool, sqlx::Error> {
-    sqlx::any::install_default_drivers();
-
+// I want to use the query! macro, but it isn't available using AnyPool
+// so I SOMEHOW need to make some dualie Postgres and Sqlite support, but thats future tuxzilla problem
+async fn connect_db() -> Result<SqlitePool, sqlx::Error> {
     let database_url = "sqlite://spool.db?mode=rwc";
 
-    AnyPoolOptions::new()
-        .max_connections(5)
-        .connect(database_url)
-        .await
+    SqlitePool::connect(database_url).await
 }
 
 #[tokio::main]

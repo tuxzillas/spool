@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        INSERT INTO files (\n            hash_filename,\n            mimetype,\n            file_size_bytes\n        )\n        VALUES (?, ?, ?)\n        ON CONFLICT(hash_filename) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "e510f535fdb6d47ea106b7f36e59f3df14a50e3b04d6d19f319538d4a34513f4"
+}

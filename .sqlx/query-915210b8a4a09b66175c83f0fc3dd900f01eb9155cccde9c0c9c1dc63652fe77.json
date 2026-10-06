@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT mimetype\n        FROM files\n        WHERE hash_filename = ?\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "mimetype",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "915210b8a4a09b66175c83f0fc3dd900f01eb9155cccde9c0c9c1dc63652fe77"
+}

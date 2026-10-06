@@ -1,4 +1,4 @@
-use sqlx::AnyPool;
+use sqlx::SqlitePool;
 use sqlx::{FromRow, query_as};
 
 #[derive(Debug, FromRow)]
@@ -6,15 +6,16 @@ struct FileMetadata {
     mimetype: String,
 }
 
-pub async fn get_file_mimetype(db: &AnyPool, hash: &str) -> Result<Option<String>, sqlx::Error> {
-    let result = query_as::<_, FileMetadata>(
+pub async fn get_file_mimetype(db: &SqlitePool, hash: &str) -> Result<Option<String>, sqlx::Error> {
+    let result = query_as!(
+        FileMetadata,
         r"
         SELECT mimetype
         FROM files
         WHERE hash_filename = ?
         ",
+        hash
     )
-    .bind(hash)
     .fetch_optional(db)
     .await?;
 
