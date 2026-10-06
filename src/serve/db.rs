@@ -8,11 +8,11 @@ struct FileMetadata {
 
 pub async fn get_file_mimetype(db: &AnyPool, hash: &str) -> Result<Option<String>, sqlx::Error> {
     let result = query_as::<_, FileMetadata>(
-        r#"
+        r"
         SELECT mimetype
         FROM files
         WHERE hash_filename = ?
-        "#,
+        ",
     )
     .bind(hash)
     .fetch_optional(db)

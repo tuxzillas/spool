@@ -79,7 +79,7 @@ pub async fn download(
     };
 
     // needs to be configurable!
-    let final_path = format!("/home/tuxzilla/Projects/spool-storage/{}", hash_hex);
+    let final_path = format!("/home/tuxzilla/Projects/spool-storage/{hash_hex}");
 
     let mimetype = detected_mimetype
         .or(multipart_mimetype)

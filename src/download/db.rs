@@ -8,7 +8,7 @@ pub async fn insert_file(
     file_size_bytes: i64,
 ) -> Result<bool, sqlx::Error> {
     let result = query(
-        r#"
+        r"
         INSERT INTO files (
             hash_filename,
             mimetype,
@@ -16,7 +16,7 @@ pub async fn insert_file(
         )
         VALUES (?, ?, ?)
         ON CONFLICT(hash_filename) DO NOTHING
-        "#,
+        ",
     )
     .bind(hash)
     .bind(mimetype)
