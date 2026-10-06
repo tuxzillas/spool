@@ -28,7 +28,7 @@ pub async fn download(
         let mut hasher = Sha256::new();
         let mut file = tempfile::Builder::new()
             .prefix(".temp-spool-")
-            .tempfile_in("/home/tuxzilla/Projects/spool-storage")
+            .tempfile_in("/home/tuxzilla/Projects/spool-storage") // not configurable
             .map_err(|_| std::io::Error::other("could not create temp file"))?;
 
         while let Some(chunk) = trec.blocking_recv() {
@@ -78,25 +78,29 @@ pub async fn download(
         return Err(StatusCode::INTERNAL_SERVER_ERROR.into());
     };
 
+    // needs to be configurable!
     let final_path = format!("/home/tuxzilla/Projects/spool-storage/{}", hash_hex);
 
     let mimetype = detected_mimetype
         .or(multipart_mimetype)
         .unwrap_or_else(|| "application/octet-stream".to_owned());
 
+    // this is obviously incredibly stupid
+    // needs to be a max per config (such as 1gb, etc)
     let file_size_bytes =
         i64::try_from(file_size_bytes).map_err(|_| StatusCode::PAYLOAD_TOO_LARGE)?;
-
-    let result = insert_file(&state.db, &hash_hex, &mimetype, file_size_bytes).await;
-    if let Err(e) = result {
-        return Err(e.into());
-    }
 
     let result = tokio::task::spawn_blocking(move || file.persist_noclobber(final_path)).await?;
     // need to filter errrors!
     // match statements?
     if let Err(e) = result {
         return Err((StatusCode::INTERNAL_SERVER_ERROR, e).into());
+    }
+
+    // moved this to prevent file metadata being added to the DB, than being written to disk
+    let result = insert_file(&state.db, &hash_hex, &mimetype, file_size_bytes).await;
+    if let Err(e) = result {
+        return Err(e.into());
     }
 
     Ok(StatusCode::CREATED)
