@@ -13,6 +13,7 @@ sha2 = "0.11.0"
 sqlx = { version = "0.8", features = [ "runtime-tokio-native-tls", "postgres", "sqlite", "any" ] }
 tempfile = "3.27.0"
 tokio = { version = "1.53.1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["io"] }
 
 [lints.clippy]
 pedantic = { level = "warn", priority = -1 }

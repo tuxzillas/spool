@@ -18,7 +18,7 @@ pub struct State {
 async fn connect_db() -> Result<AnyPool, sqlx::Error> {
     sqlx::any::install_default_drivers();
 
-    let database_url = "sqlite://gasoline.db?mode=rwc";
+    let database_url = "sqlite://spool.db?mode=rwc";
 
     Ok(AnyPoolOptions::new()
         .max_connections(5)
@@ -33,7 +33,7 @@ async fn main() {
 
     let app = Router::new()
         .route("/", get(|| async { "hello from spool" }))
-        .route("/serve", get(serve::files::send_image))
+        .route("/{file_hash}", get(serve::files::send_image))
         .route(
             "/upload",
             post(download::files::download).layer(DefaultBodyLimit::max(1024 * 1024 * 1024)), // need to be configurable

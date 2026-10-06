@@ -8,6 +8,8 @@ use axum::{
     response::{IntoResponse, Response},
 };
 
+use tempfile::PersistError;
+
 #[derive(Debug)]
 pub struct ErrorStatus {
     code: StatusCode,
@@ -19,6 +21,24 @@ impl From<StatusCode> for ErrorStatus {
         Self {
             code,
             message: "no error message provided".to_string(),
+        }
+    }
+}
+
+impl From<tokio::task::JoinError> for ErrorStatus {
+    fn from(err: tokio::task::JoinError) -> Self {
+        Self {
+            code: StatusCode::INTERNAL_SERVER_ERROR,
+            message: err.to_string(),
+        }
+    }
+}
+
+impl From<(StatusCode, PersistError)> for ErrorStatus {
+    fn from((code, err): (StatusCode, PersistError)) -> Self {
+        Self {
+            code,
+            message: err.to_string(),
         }
     }
 }

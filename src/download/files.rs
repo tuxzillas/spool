@@ -24,9 +24,6 @@ pub async fn download(
 
     let (task, mut trec) = mpsc::channel::<Bytes>(8);
 
-    // note to future self:
-    //
-
     let write = tokio::task::spawn_blocking(move || {
         let mut hasher = Sha256::new();
         let mut file = tempfile::Builder::new()
@@ -95,14 +92,12 @@ pub async fn download(
         return Err(e.into());
     }
 
-    // if i remember properly, noclobber will explode if a hash already exists.
-    // so we wont need the database to confirm if theres a conflict or not now.
-    // also need to figure out what errors this returns, and its accordingly match statements
-
-    tokio::task::spawn_blocking(move || file.persist_noclobber(final_path))
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let result = tokio::task::spawn_blocking(move || file.persist_noclobber(final_path)).await?;
+    // need to filter errrors!
+    // match statements?
+    if let Err(e) = result {
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, e).into());
+    }
 
     Ok(StatusCode::CREATED)
 }
