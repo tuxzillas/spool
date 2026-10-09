@@ -13,12 +13,10 @@ use crate::{SpoolState, types::ErrorStatus};
 use crate::serve::db::get_file_mimetype;
 
 pub async fn serve(
-    State(state): State<SpoolState>, // i kind of hate this
+    State(state): State<SpoolState>,
     Path(file_hash): Path<String>,
 ) -> Result<impl IntoResponse, ErrorStatus> {
-    let path = &state.config.storage_path;
-
-    let Ok(file) = File::open(format!("{path}{file_hash}")).await else {
+    let Ok(file) = File::open(format!("{{&state.config.storage_path}}{file_hash}")).await else {
         return Err((StatusCode::NOT_FOUND, "File not found").into());
     };
     let Some(mimetype) = get_file_mimetype(&state.db, &file_hash).await? else {

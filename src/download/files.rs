@@ -28,7 +28,7 @@ pub async fn download(
         let mut hasher = Sha256::new();
         let mut file = tempfile::Builder::new()
             .prefix(".temp-spool-")
-            .tempfile_in("/home/tuxzilla/Projects/spool-storage") // not configurable
+            .tempfile_in(&state.config.storage_path)
             .map_err(|_| std::io::Error::other("could not create temp file"))?;
 
         while let Some(chunk) = trec.blocking_recv() {
@@ -75,9 +75,6 @@ pub async fn download(
         return Err(StatusCode::INTERNAL_SERVER_ERROR.into());
     };
 
-    // needs to be configurable!
-    let final_path = format!("/home/tuxzilla/Projects/spool-storage/{hash_hex}");
-
     let mimetype = detected_mimetype
         .or(multipart_mimetype)
         .unwrap_or_else(|| "application/octet-stream".to_owned());
@@ -87,7 +84,10 @@ pub async fn download(
     let file_size_bytes =
         i64::try_from(file_size_bytes).map_err(|_| StatusCode::PAYLOAD_TOO_LARGE)?;
 
-    let result = tokio::task::spawn_blocking(move || file.persist_noclobber(final_path)).await?;
+    let result = tokio::task::spawn_blocking(move || {
+        file.persist_noclobber("{&state.config.storage_path}{&hash_hex}")
+    })
+    .await?;
     // need to filter errrors!
     // match statements?
     if let Err(e) = result {
