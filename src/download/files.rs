@@ -4,7 +4,7 @@ use sha2::{Digest, Sha256};
 use std::io::Write;
 use tokio::sync::mpsc;
 
-use crate::State;
+use crate::SpoolState;
 use crate::download::db::insert_file;
 use crate::types::ErrorStatus;
 
@@ -15,7 +15,7 @@ use crate::types::ErrorStatus;
 // also need to figure out what happens when two people upload at the same time
 
 pub async fn download(
-    axum::extract::State(state): axum::extract::State<State>,
+    axum::extract::State(state): axum::extract::State<SpoolState>,
     mut multipart: Multipart,
 ) -> Result<StatusCode, ErrorStatus> {
     let mut file_size_bytes: u64 = 0;
