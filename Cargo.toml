@@ -15,11 +15,19 @@ thiserror = "2.0.21"
 tokio = { version = "1.53.1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["io"] }
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "macros", "migrate"] }
+serde = "1.0.229"
+toml = "1.1.8"
 
 [features]
 default = ["sqlite"]
 sqlite = ["sqlx/sqlite"]
 postgres = ["sqlx/postgres"]
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+opt-level = 3
 
 [lints.clippy]
 pedantic = { level = "warn", priority = -1 }

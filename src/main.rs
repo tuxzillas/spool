@@ -5,6 +5,8 @@ use axum::{
 
 use sqlx::SqlitePool;
 
+use serde::Deserialize;
+
 mod download;
 mod serve;
 mod types;
@@ -15,7 +17,7 @@ pub struct SpoolState {
     config: Config,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct Config {
     pub address: String,
     pub max_file_size_bytes: usize,
@@ -30,6 +32,13 @@ async fn connect_db() -> Result<SqlitePool, sqlx::Error> {
     SqlitePool::connect(database_url).await
 }
 
+async fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
+    let path = "spool.toml";
+    let contents = tokio::fs::read_to_string(path).await?;
+    let config: Config = toml::from_str(&contents)?;
+    Ok(config)
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db = connect_db().await?;
@@ -38,11 +47,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let state = SpoolState {
         db,
-        config: Config {
-            address: "0.0.0.0:3000".to_string(),
-            max_file_size_bytes: 1024 * 1024 * 1024,
-            storage_path: "/home/tuxzilla/Projects/spool-storage".to_string(),
-        },
+        config: load_config().await?,
     };
 
     let app = Router::new()

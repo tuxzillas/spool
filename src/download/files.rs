@@ -84,6 +84,8 @@ pub async fn download(
     let file_size_bytes =
         i64::try_from(file_size_bytes).map_err(|_| StatusCode::PAYLOAD_TOO_LARGE)?;
 
+    // the more I read this the more I think "why the hell are we spawning a tokio task for basically a file rename??"
+    // i need to do some tests on if doing this as sync harms performance any
     let result = tokio::task::spawn_blocking(move || {
         file.persist_noclobber("{&state.config.storage_path}{&hash_hex}")
     })
