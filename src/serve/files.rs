@@ -16,6 +16,9 @@ pub async fn serve(
     State(state): State<SpoolState>,
     Path(file_hash): Path<String>,
 ) -> Result<impl IntoResponse, ErrorStatus> {
+    if file_hash.is_empty() || !file_hash.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err((StatusCode::BAD_REQUEST, "Invalid hash").into());
+    }
     let Ok(file) = File::open(format!("{}/{file_hash}", state.config.storage_path)).await else {
         return Err((StatusCode::NOT_FOUND, "File not found").into());
     };
