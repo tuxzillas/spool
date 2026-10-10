@@ -20,9 +20,8 @@ pub async fn serve(
     if file_hash.len() != 64 || !file_hash.chars().all(|c| c.is_ascii_hexdigit()) {
         return Err((StatusCode::BAD_REQUEST, "Invalid hash").into());
     }
-    let storage_root = PathBuf::from(&state.config.storage_path);
-    let file_path = storage_root.join(&file_hash);
-    let Ok(file) = File::open(file_path).await else {
+    let Ok(file) = File::open(PathBuf::from(&state.config.storage_path).join(&file_hash)).await
+    else {
         return Err((StatusCode::NOT_FOUND, "File not found").into());
     };
     let Some(mimetype) = get_file_mimetype(&state.db, &file_hash).await? else {
