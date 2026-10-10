@@ -1,8 +1,8 @@
 use axum::{extract::Multipart, http::StatusCode};
 use bytes::Bytes;
 use sha2::{Digest, Sha256};
-use std::io::Write;
 use tokio::sync::mpsc;
+use {std::io::Write, std::path::Path};
 
 use crate::SpoolState;
 use crate::download::db::insert_file;
@@ -13,6 +13,7 @@ use crate::types::ErrorStatus;
 // cause i think this just merges two files into one blob.
 // which.. isn't helpful.
 // also need to figure out what happens when two people upload at the same time
+// also fix the ugly error handling
 
 pub async fn download(
     axum::extract::State(state): axum::extract::State<SpoolState>,
@@ -41,7 +42,7 @@ pub async fn download(
 
         let hash_hex = hex::encode(hasher.finalize());
 
-        Ok((file, hash_hex, file_size_bytes))
+        Ok((file, hash_hex, file_size_bytes, state.config.storage_path))
     });
 
     while let Some(mut field) = multipart
@@ -71,7 +72,7 @@ pub async fn download(
         .ok()
         .and_then(|inner: Result<_, std::io::Error>| inner.ok());
 
-    let Some((file, hash_hex, file_size_bytes)) = result else {
+    let Some((file, hash_hex, file_size_bytes, storage_path)) = result else {
         return Err(StatusCode::INTERNAL_SERVER_ERROR.into());
     };
 
@@ -86,18 +87,17 @@ pub async fn download(
 
     // the more I read this the more I think "why the hell are we spawning a tokio task for basically a file rename??"
     // i need to do some tests on if doing this as sync harms performance any
-    let result = tokio::task::spawn_blocking(move || {
-        file.persist_noclobber("{&state.config.storage_path}{&hash_hex}")
-    })
-    .await?;
-    // need to filter errrors!
-    // match statements?
-    if let Err(e) = result {
-        return Err((StatusCode::INTERNAL_SERVER_ERROR, e).into());
-    }
+    let hash_hex = tokio::task::spawn_blocking(move || -> Result<String, std::io::Error> {
+        file.persist_noclobber(Path::new(&storage_path).join(&hash_hex))
+            .map_err(|error| error.error)?;
 
-    // moved this to prevent file metadata being added to the DB, than being written to disk
+        Ok(hash_hex)
+    })
+    .await?
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
     let result = insert_file(&state.db, &hash_hex, &mimetype, file_size_bytes).await;
+
     if let Err(e) = result {
         return Err(e.into());
     }
