@@ -5,6 +5,7 @@ use axum::{
     http::{StatusCode, header},
     response::IntoResponse,
 };
+use std::path::PathBuf;
 use tokio::fs::File;
 use tokio_util::io::ReaderStream;
 
@@ -16,10 +17,12 @@ pub async fn serve(
     State(state): State<SpoolState>,
     Path(file_hash): Path<String>,
 ) -> Result<impl IntoResponse, ErrorStatus> {
-    if file_hash.is_empty() || !file_hash.chars().all(|c| c.is_ascii_hexdigit()) {
+    if file_hash.len() != 64 || !file_hash.chars().all(|c| c.is_ascii_hexdigit()) {
         return Err((StatusCode::BAD_REQUEST, "Invalid hash").into());
     }
-    let Ok(file) = File::open(format!("{}/{file_hash}", state.config.storage_path)).await else {
+    let storage_root = PathBuf::from(&state.config.storage_path);
+    let file_path = storage_root.join(&file_hash);
+    let Ok(file) = File::open(file_path).await else {
         return Err((StatusCode::NOT_FOUND, "File not found").into());
     };
     let Some(mimetype) = get_file_mimetype(&state.db, &file_hash).await? else {
