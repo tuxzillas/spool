@@ -41,6 +41,8 @@ async fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tracing_subscriber::fmt::init();
+
     let db = connect_db().await?;
 
     sqlx::migrate!("./migrations").run(&db).await?;

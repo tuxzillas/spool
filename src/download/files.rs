@@ -1,4 +1,4 @@
-use axum::{extract::Multipart, http::StatusCode};
+use axum::{extract::Multipart, extract::State, http::StatusCode};
 use bytes::Bytes;
 use sha2::{Digest, Sha256};
 use tokio::sync::mpsc;
@@ -8,15 +8,8 @@ use crate::SpoolState;
 use crate::download::db::insert_file;
 use crate::types::ErrorStatus;
 
-// i think my next best step here is to filter out say..
-// someone uploading two files at once!
-// cause i think this just merges two files into one blob.
-// which.. isn't helpful.
-// also need to figure out what happens when two people upload at the same time
-// also fix the ugly error handling
-
 pub async fn download(
-    axum::extract::State(state): axum::extract::State<SpoolState>,
+    State(state): State<SpoolState>,
     mut multipart: Multipart,
 ) -> Result<StatusCode, ErrorStatus> {
     let mut file_size_bytes: u64 = 0;
@@ -24,20 +17,26 @@ pub async fn download(
     let mut multipart_mimetype: Option<String> = None;
 
     let (task, mut trec) = mpsc::channel::<Bytes>(8);
+    let max_file_size_bytes = state.config.max_file_size_bytes as u64;
 
-    let write = tokio::task::spawn_blocking(move || {
+    let write = tokio::task::spawn_blocking(move || -> Result<_, ErrorStatus> {
         let mut hasher = Sha256::new();
         let mut file = tempfile::Builder::new()
             .prefix(".temp-spool-")
-            .tempfile_in(&state.config.storage_path)
-            .map_err(|_| std::io::Error::other("could not create temp file"))?;
+            .tempfile_in(&state.config.storage_path)?;
 
         while let Some(chunk) = trec.blocking_recv() {
-            file.write_all(&chunk)?;
-            hasher.update(&chunk);
             file_size_bytes = file_size_bytes
                 .checked_add(chunk.len() as u64)
-                .ok_or(std::io::Error::other("file size too large"))?;
+                .ok_or((StatusCode::PAYLOAD_TOO_LARGE, "file too large"))?;
+
+            if file_size_bytes > max_file_size_bytes {
+                drop(file);
+                return Err((StatusCode::PAYLOAD_TOO_LARGE, "file too large").into());
+            }
+
+            file.write_all(&chunk)?;
+            hasher.update(&chunk);
         }
 
         let hash_hex = hex::encode(hasher.finalize());
@@ -48,59 +47,58 @@ pub async fn download(
     while let Some(mut field) = multipart
         .next_field()
         .await
-        .map_err(|_| StatusCode::BAD_REQUEST)?
+        .map_err(|_| (StatusCode::BAD_REQUEST, "invalid multipart body"))?
     {
-        if multipart_mimetype.is_none() {
-            multipart_mimetype = field.content_type().map(str::to_owned);
+        if field.name() != Some("file") {
+            return Err((StatusCode::BAD_REQUEST, "expected a field named 'file'").into());
         }
 
-        while let Some(chunk) = field.chunk().await.map_err(|_| StatusCode::BAD_REQUEST)? {
+        multipart_mimetype = field.content_type().map(str::to_owned);
+
+        let mut field_size_bytes: u64 = 0;
+
+        while let Some(chunk) = field
+            .chunk()
+            .await
+            .map_err(|_| (StatusCode::BAD_REQUEST, "invalid multipart body"))?
+        {
+            field_size_bytes = field_size_bytes
+                .checked_add(chunk.len() as u64)
+                .filter(|&size| size <= max_file_size_bytes)
+                .ok_or((StatusCode::PAYLOAD_TOO_LARGE, "file too large"))?;
+
             if detected_mimetype.is_none() {
                 detected_mimetype = infer::get(&chunk).map(|kind| kind.mime_type().to_owned());
             }
 
             task.send(chunk)
                 .await
-                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+                .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "upload pipeline closed"))?;
         }
     }
 
     drop(task);
 
-    let result = write
-        .await
-        .ok()
-        .and_then(|inner: Result<_, std::io::Error>| inner.ok());
-
-    let Some((file, hash_hex, file_size_bytes, storage_path)) = result else {
-        return Err(StatusCode::INTERNAL_SERVER_ERROR.into());
-    };
+    let (file, hash_hex, file_size_bytes, storage_path) = write.await??;
 
     let mimetype = detected_mimetype
         .or(multipart_mimetype)
         .unwrap_or_else(|| "application/octet-stream".to_owned());
 
-    // this is obviously incredibly stupid
-    // needs to be a max per config (such as 1gb, etc)
-    let file_size_bytes =
-        i64::try_from(file_size_bytes).map_err(|_| StatusCode::PAYLOAD_TOO_LARGE)?;
+    let file_size_bytes = i64::try_from(file_size_bytes) // this is ass
+        .map_err(|_| (StatusCode::PAYLOAD_TOO_LARGE, "file too large"))?;
 
     // the more I read this the more I think "why the hell are we spawning a tokio task for basically a file rename??"
     // i need to do some tests on if doing this as sync harms performance any
-    let hash_hex = tokio::task::spawn_blocking(move || -> Result<String, std::io::Error> {
-        file.persist_noclobber(Path::new(&storage_path).join(&hash_hex))
-            .map_err(|error| error.error)?;
+    // wait, couldn't i just.. put this in the end of the loop above??
+    let hash_hex = tokio::task::spawn_blocking(move || -> Result<String, ErrorStatus> {
+        file.persist_noclobber(Path::new(&storage_path).join(&hash_hex))?;
 
         Ok(hash_hex)
     })
-    .await?
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    .await??;
 
-    let result = insert_file(&state.db, &hash_hex, &mimetype, file_size_bytes).await;
-
-    if let Err(e) = result {
-        return Err(e.into());
-    }
+    insert_file(&state.db, &hash_hex, &mimetype, file_size_bytes).await?;
 
     Ok(StatusCode::CREATED)
 }

@@ -1,8 +1,3 @@
-// i made this because I didnt want to use Response<Body>>
-// ...
-// is that a dumb reason?
-// yes.
-
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
@@ -13,14 +8,16 @@ use tempfile::PersistError;
 #[derive(Debug)]
 pub struct ErrorStatus {
     code: StatusCode,
-    message: String,
+    public_message: String,
+    log_message: String,
 }
 
 impl From<StatusCode> for ErrorStatus {
     fn from(code: StatusCode) -> Self {
         Self {
             code,
-            message: "no error message provided".to_string(),
+            public_message: "an error occurred".to_string(),
+            log_message: "no error message provided".to_string(),
         }
     }
 }
@@ -29,16 +26,28 @@ impl From<tokio::task::JoinError> for ErrorStatus {
     fn from(err: tokio::task::JoinError) -> Self {
         Self {
             code: StatusCode::INTERNAL_SERVER_ERROR,
-            message: err.to_string(),
+            public_message: "internal server error".to_string(),
+            log_message: err.to_string(),
         }
     }
 }
 
-impl From<(StatusCode, PersistError)> for ErrorStatus {
-    fn from((code, err): (StatusCode, PersistError)) -> Self {
+impl From<PersistError> for ErrorStatus {
+    fn from(err: PersistError) -> Self {
         Self {
-            code,
-            message: err.to_string(),
+            code: StatusCode::CONFLICT,
+            public_message: "file exists".to_string(),
+            log_message: err.to_string(),
+        }
+    }
+}
+
+impl From<std::io::Error> for ErrorStatus {
+    fn from(err: std::io::Error) -> Self {
+        Self {
+            code: StatusCode::INTERNAL_SERVER_ERROR,
+            public_message: "internal server error".to_string(),
+            log_message: err.to_string(),
         }
     }
 }
@@ -47,7 +56,8 @@ impl From<(StatusCode, &'static str)> for ErrorStatus {
     fn from((code, message): (StatusCode, &'static str)) -> Self {
         Self {
             code,
-            message: message.to_string(),
+            public_message: message.to_string(),
+            log_message: message.to_string(),
         }
     }
 }
@@ -56,18 +66,15 @@ impl From<sqlx::Error> for ErrorStatus {
     fn from(err: sqlx::Error) -> Self {
         Self {
             code: StatusCode::INTERNAL_SERVER_ERROR,
-            message: err.to_string(),
+            public_message: "internal server error".to_string(),
+            log_message: err.to_string(),
         }
     }
 }
 
-// note to self
-// the USER needs a pretty error message that doesnt leak internal details
-// the server needs to log the error for debugging ofc
 impl IntoResponse for ErrorStatus {
     fn into_response(self) -> Response {
-        println!("ERROR: {} {}", self.code, self.message);
-
-        (self.code, self.message).into_response()
+        tracing::error!(code = %self.code, "{}", self.log_message);
+        (self.code, self.public_message).into_response()
     }
 }
