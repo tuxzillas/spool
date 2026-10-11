@@ -12,25 +12,23 @@ pub async fn download(
     State(state): State<SpoolState>,
     mut multipart: Multipart,
 ) -> Result<StatusCode, ErrorStatus> {
-    let mut file_size_bytes: u64 = 0;
-    let mut detected_mimetype: Option<String> = None;
-    let mut multipart_mimetype: Option<String> = None;
-
+    let mut mimetype: Option<String> = None;
+    let max_bytes = state.config.max_file_size_bytes as u64;
     let (task, mut trec) = mpsc::channel::<Bytes>(8);
-    let max_file_size_bytes = state.config.max_file_size_bytes as u64;
 
     let write = tokio::task::spawn_blocking(move || -> Result<_, ErrorStatus> {
+        let mut fsize_bytes: u64 = 0;
         let mut hasher = Sha256::new();
         let mut file = tempfile::Builder::new()
             .prefix(".temp-spool-")
             .tempfile_in(&state.config.storage_path)?;
 
         while let Some(chunk) = trec.blocking_recv() {
-            file_size_bytes = file_size_bytes
+            fsize_bytes = fsize_bytes
                 .checked_add(chunk.len() as u64)
                 .ok_or((StatusCode::PAYLOAD_TOO_LARGE, "file too large"))?;
 
-            if file_size_bytes > max_file_size_bytes {
+            if fsize_bytes > max_bytes {
                 drop(file);
                 return Err((StatusCode::PAYLOAD_TOO_LARGE, "file too large").into());
             }
@@ -41,7 +39,8 @@ pub async fn download(
 
         let hash_hex = hex::encode(hasher.finalize());
 
-        Ok((file, hash_hex, file_size_bytes, state.config.storage_path))
+        file.persist_noclobber(Path::new(&state.config.storage_path).join(&hash_hex))?;
+        Ok((hash_hex, fsize_bytes))
     });
 
     while let Some(mut field) = multipart
@@ -50,55 +49,52 @@ pub async fn download(
         .map_err(|_| (StatusCode::BAD_REQUEST, "invalid multipart body"))?
     {
         if field.name() != Some("file") {
-            return Err((StatusCode::BAD_REQUEST, "expected a field named 'file'").into());
+            return Err((
+                StatusCode::BAD_REQUEST,
+                "please include a file header",
+                "request did not include a file header",
+            )
+                .into());
         }
-
-        multipart_mimetype = field.content_type().map(str::to_owned);
-
-        let mut field_size_bytes: u64 = 0;
+        let filename = field.file_name().map(str::to_owned);
+        let client_content_type = field.content_type().map(str::to_owned);
+        let mut inferred_type: Option<String> = None;
 
         while let Some(chunk) = field
             .chunk()
             .await
-            .map_err(|_| (StatusCode::BAD_REQUEST, "invalid multipart body"))?
+            .map_err(|_| (StatusCode::BAD_REQUEST, "failed to read field chunks"))?
         {
-            field_size_bytes = field_size_bytes
-                .checked_add(chunk.len() as u64)
-                .filter(|&size| size <= max_file_size_bytes)
-                .ok_or((StatusCode::PAYLOAD_TOO_LARGE, "file too large"))?;
-
-            if detected_mimetype.is_none() {
-                detected_mimetype = infer::get(&chunk).map(|kind| kind.mime_type().to_owned());
+            if inferred_type.is_none() {
+                if let Some(kind) = infer::get(&chunk) {
+                    inferred_type = Some(kind.mime_type().to_owned());
+                }
             }
-
             task.send(chunk)
                 .await
-                .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "upload pipeline closed"))?;
+                .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to write file"))?;
         }
+
+        mimetype = inferred_type
+            .or_else(|| client_content_type.filter(|ct| ct != "application/octet-stream"))
+            .or_else(|| {
+                filename
+                    .and_then(|name| mime_guess::from_path(&name).first().map(|m| m.to_string()))
+            });
+        break;
     }
 
     drop(task);
 
-    let (file, hash_hex, file_size_bytes, storage_path) = write.await??;
+    let (hash_hex, fsize_bytes) = write.await??;
 
-    let mimetype = detected_mimetype
-        .or(multipart_mimetype)
-        .unwrap_or_else(|| "application/octet-stream".to_owned());
-
-    let file_size_bytes = i64::try_from(file_size_bytes) // this is ass
-        .map_err(|_| (StatusCode::PAYLOAD_TOO_LARGE, "file too large"))?;
-
-    // the more I read this the more I think "why the hell are we spawning a tokio task for basically a file rename??"
-    // i need to do some tests on if doing this as sync harms performance any
-    // wait, couldn't i just.. put this in the end of the loop above??
-    let hash_hex = tokio::task::spawn_blocking(move || -> Result<String, ErrorStatus> {
-        file.persist_noclobber(Path::new(&storage_path).join(&hash_hex))?;
-
-        Ok(hash_hex)
-    })
-    .await??;
-
-    insert_file(&state.db, &hash_hex, &mimetype, file_size_bytes).await?;
+    insert_file(
+        &state.db,
+        &hash_hex,
+        &mimetype.unwrap_or_else(|| "application/octet-stream".to_owned()),
+        fsize_bytes as i64,
+    )
+    .await?;
 
     Ok(StatusCode::CREATED)
 }

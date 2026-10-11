@@ -62,6 +62,16 @@ impl From<(StatusCode, &'static str)> for ErrorStatus {
     }
 }
 
+impl From<(StatusCode, &'static str, &'static str)> for ErrorStatus {
+    fn from((code, message, log_message): (StatusCode, &'static str, &'static str)) -> Self {
+        Self {
+            code,
+            public_message: message.to_string(),
+            log_message: log_message.to_string(),
+        }
+    }
+}
+
 impl From<sqlx::Error> for ErrorStatus {
     fn from(err: sqlx::Error) -> Self {
         Self {
