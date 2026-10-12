@@ -43,7 +43,7 @@ pub async fn download(
         Ok((hash_hex, fsize_bytes))
     });
 
-    while let Some(mut field) = multipart
+    if let Some(mut field) = multipart
         .next_field()
         .await
         .map_err(|_| (StatusCode::BAD_REQUEST, "invalid multipart body"))?
@@ -56,32 +56,36 @@ pub async fn download(
             )
                 .into());
         }
-        let filename = field.file_name().map(str::to_owned);
-        let client_content_type = field.content_type().map(str::to_owned);
-        let mut inferred_type: Option<String> = None;
+
+        let mut sniffed: Option<&str> = None;
+        let mut first_chunk = true;
 
         while let Some(chunk) = field
             .chunk()
             .await
             .map_err(|_| (StatusCode::BAD_REQUEST, "failed to read field chunks"))?
         {
-            if inferred_type.is_none() {
-                if let Some(kind) = infer::get(&chunk) {
-                    inferred_type = Some(kind.mime_type().to_owned());
-                }
+            if first_chunk {
+                first_chunk = false;
+                sniffed = infer::get(&chunk).map(|kind| kind.mime_type());
             }
             task.send(chunk)
                 .await
                 .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to write file"))?;
         }
 
-        mimetype = inferred_type
-            .or_else(|| client_content_type.filter(|ct| ct != "application/octet-stream"))
+        mimetype = sniffed
             .or_else(|| {
-                filename
-                    .and_then(|name| mime_guess::from_path(&name).first().map(|m| m.to_string()))
-            });
-        break;
+                field
+                    .content_type()
+                    .filter(|ctype| *ctype != "application/octet-stream")
+            })
+            .or_else(|| {
+                field
+                    .file_name()
+                    .and_then(|name| mime_guess::from_path(name).first_raw())
+            })
+            .map(str::to_owned);
     }
 
     drop(task);
