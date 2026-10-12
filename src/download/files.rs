@@ -105,6 +105,155 @@ pub async fn download(
     .await?;
     Ok((
         StatusCode::OK,
-        Json(format!(r#"{}/{}"#, &state.config.address, hash_hex)), // this will be replaced with config.domain in the future
+        Json(format!(r"{}/{}", state.config.address, hash_hex)), // this will be replaced with config.domain in the future
     ))
+}
+
+#[allow(clippy::cast_possible_wrap)]
+#[allow(clippy::expect_used)]
+#[cfg(test)]
+mod tests {
+    use super::download;
+    use crate::{Config, SpoolState};
+    use axum::{
+        Json,
+        body::Body,
+        extract::{FromRequest, Multipart, State},
+        http::{Request, StatusCode},
+    };
+    use sqlx::sqlite::SqlitePoolOptions;
+    use tempfile::TempDir;
+
+    async fn test_state(storage: &TempDir, max_file_size_bytes: usize) -> SpoolState {
+        let db = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("in-memory database should connect");
+        sqlx::migrate!("./migrations")
+            .run(&db)
+            .await
+            .expect("migrations should succeed");
+        SpoolState {
+            db,
+            config: Config {
+                address: "http://localhost".to_owned(),
+                max_file_size_bytes,
+                storage_path: storage.path().to_string_lossy().into_owned(),
+            },
+        }
+    }
+
+    async fn multipart(body: &str) -> Multipart {
+        let request = Request::builder()
+            .header("content-type", "multipart/form-data; boundary=boundary")
+            .body(Body::from(body.to_owned()))
+            .expect("request should build");
+        Multipart::from_request(request, &())
+            .await
+            .expect("multipart request should parse")
+    }
+
+    fn file_part(name: &str, headers: &str, content: &str) -> String {
+        format!(
+            "--boundary\r\nContent-Disposition: form-data; name=\"{name}\"{headers}\r\n\r\n{content}\r\n--boundary--\r\n"
+        )
+    }
+
+    #[tokio::test]
+    async fn stores_file_with_content_hash_size_and_detected_mime_type() {
+        let storage = TempDir::new().expect("temporary storage should be created");
+        let state = test_state(&storage, 1024).await;
+        let data = b"hello upload";
+        let body = format!(
+            "--boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"note.txt\"\r\nContent-Type: text/plain\r\n\r\n{}\r\n--boundary--\r\n",
+            String::from_utf8_lossy(data)
+        );
+
+        let (status, Json(url)) = download(State(state.clone()), multipart(&body).await)
+            .await
+            .expect("upload should succeed");
+        let hash = hex::encode(sha2::Sha256::digest(data));
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(url, format!("http://localhost/{hash}"));
+        assert_eq!(
+            std::fs::read(storage.path().join(&hash)).expect("file should exist"),
+            data
+        );
+        let row: (String, i64) =
+            sqlx::query_as("SELECT mimetype, file_size_bytes FROM files WHERE hash_filename = ?")
+                .bind(&hash)
+                .fetch_one(&state.db)
+                .await
+                .expect("metadata should be inserted");
+        assert_eq!(row, ("text/plain".to_owned(), data.len() as i64));
+    }
+
+    #[tokio::test]
+    async fn accepts_empty_file_and_records_zero_bytes() {
+        let storage = TempDir::new().expect("temporary storage should be created");
+        let state = test_state(&storage, 0).await;
+        let body = file_part("file", "; filename=\"empty.bin\"", "");
+        let result = download(State(state.clone()), multipart(&body).await).await;
+        assert!(result.is_ok(), "empty files are within a zero-byte limit");
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM files WHERE file_size_bytes = 0")
+            .fetch_one(&state.db)
+            .await
+            .expect("metadata query should succeed");
+        assert_eq!(count, 1);
+    }
+
+    #[tokio::test]
+    async fn rejects_file_larger_than_limit_without_persisting_it() {
+        let storage = TempDir::new().expect("temporary storage should be created");
+        let state = test_state(&storage, 3).await;
+        let body = file_part("file", "", "four");
+        let response = download(State(state.clone()), multipart(&body).await)
+            .await
+            .expect_err("oversized upload should fail")
+            .into_response();
+        assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(
+            std::fs::read_dir(storage.path())
+                .expect("storage should exist")
+                .count(),
+            0
+        );
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM files")
+            .fetch_one(&state.db)
+            .await
+            .expect("metadata query should succeed");
+        assert_eq!(count, 0);
+    }
+
+    #[tokio::test]
+    async fn rejects_first_field_that_is_not_named_file() {
+        let storage = TempDir::new().expect("temporary storage should be created");
+        let state = test_state(&storage, 100).await;
+        let body = file_part("other", "", "data");
+        let response = download(State(state), multipart(&body).await)
+            .await
+            .expect_err("wrong field should fail")
+            .into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn empty_multipart_body_uploads_empty_content() {
+        let storage = TempDir::new().expect("temporary storage should be created");
+        let state = test_state(&storage, 100).await;
+        let response = download(State(state.clone()), multipart("--boundary--\r\n").await).await;
+        assert!(
+            response.is_ok(),
+            "missing file field currently becomes an empty upload"
+        );
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM files")
+            .fetch_one(&state.db)
+            .await
+            .expect("metadata query should succeed");
+        assert_eq!(count, 1);
+    }
+
+    use axum::response::IntoResponse;
+    use sha2::Digest;
 }
