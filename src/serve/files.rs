@@ -13,6 +13,8 @@ use crate::{SpoolState, types::ErrorStatus};
 
 use crate::serve::db::get_file_mimetype;
 
+const DOWNLOAD_CHUNK_SIZE: usize = 256 * 1024;
+
 pub async fn serve(
     State(state): State<SpoolState>,
     Path(file_hash): Path<String>,
@@ -28,7 +30,7 @@ pub async fn serve(
         return Err((StatusCode::NOT_FOUND, "File not found").into());
     };
 
-    let stream = ReaderStream::new(file);
+    let stream = ReaderStream::with_capacity(file, DOWNLOAD_CHUNK_SIZE);
     let body = Body::from_stream(stream);
 
     let headers = [(header::CONTENT_TYPE, mimetype)];
