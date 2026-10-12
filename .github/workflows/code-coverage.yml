@@ -27,9 +27,6 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
-      - name: Populate SQLx cache
-        run: cargo sqlx prepare --check -- --all-targets
-
       - name: Generate Code Coverage Report
         run: cargo llvm-cov --all-features --workspace --cobertura --output-path cobertura.xml
 
