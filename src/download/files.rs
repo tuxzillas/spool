@@ -96,7 +96,7 @@ pub async fn download(
         &state.db,
         &hash_hex,
         &mimetype.unwrap_or_else(|| "application/octet-stream".to_owned()),
-        fsize_bytes as i64,
+        fsize_bytes.cast_signed(),
     )
     .await?;
 

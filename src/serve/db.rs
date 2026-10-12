@@ -22,6 +22,7 @@ pub async fn get_file_mimetype(db: &SqlitePool, hash: &str) -> Result<Option<Str
     Ok(result.map(|meta| meta.mimetype))
 }
 
+#[allow(clippy::expect_used)]
 #[cfg(test)]
 mod tests {
     use super::get_file_mimetype;

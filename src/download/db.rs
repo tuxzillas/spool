@@ -27,6 +27,7 @@ pub async fn insert_file(
     Ok(result.rows_affected() > 0)
 }
 
+#[allow(clippy::expect_used)]
 #[cfg(test)]
 mod tests {
     use super::insert_file;
