@@ -1,4 +1,8 @@
-use axum::{extract::Multipart, extract::State, http::StatusCode};
+use axum::{
+    Json,
+    extract::{Multipart, State},
+    http::StatusCode,
+};
 use bytes::Bytes;
 use sha2::{Digest, Sha256};
 use tokio::sync::mpsc;
@@ -11,7 +15,7 @@ use crate::types::ErrorStatus;
 pub async fn download(
     State(state): State<SpoolState>,
     mut multipart: Multipart,
-) -> Result<StatusCode, ErrorStatus> {
+) -> Result<(StatusCode, Json<String>), ErrorStatus> {
     let mut mimetype: Option<String> = None;
     let max_bytes = state.config.max_file_size_bytes as u64;
     let (task, mut trec) = mpsc::channel::<Bytes>(8);
@@ -99,6 +103,8 @@ pub async fn download(
         fsize_bytes.cast_signed(),
     )
     .await?;
-
-    Ok(StatusCode::CREATED)
+    Ok((
+        StatusCode::OK,
+        Json(format!(r#"{}/{}"#, &state.config.address, hash_hex)), // this will be replaced with config.domain in the future
+    ))
 }
