@@ -1,11 +1,13 @@
 use axum::{
     Router,
+    extract::DefaultBodyLimit,
     routing::{get, post},
 };
 
 use sqlx::SqlitePool;
 
 use serde::Deserialize;
+use tower_http::trace::TraceLayer;
 
 mod download;
 mod serve;
@@ -43,6 +45,8 @@ async fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
+    tracing::info!("Starting spool server...");
+
     let db = connect_db().await?;
 
     sqlx::migrate!("./migrations").run(&db).await?;
@@ -55,10 +59,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app = Router::new()
         .route("/", get(|| async { "hello from spool" }))
         .route("/{file_hash}", get(serve::files::serve))
-        .route("/upload", post(download::files::download))
+        .route(
+            "/upload",
+            post(download::files::download)
+                .layer(DefaultBodyLimit::max(state.config.max_file_size_bytes)),
+        )
+        .layer(
+            TraceLayer::new_for_http()
+                .on_request(
+                    |request: &axum::http::Request<axum::body::Body>, _span: &tracing::Span| {
+                        tracing::info!(
+                            method = %request.method(),
+                            uri = %request.uri(),
+                            "started processing request"
+                        );
+                    },
+                )
+                .on_response(
+                    |response: &axum::http::Response<_>,
+                     latency: std::time::Duration,
+                     _span: &tracing::Span| {
+                        tracing::info!(
+                            status = %response.status(),
+                            latency = ?latency,
+                            "finished processing request"
+                        );
+                    },
+                ),
+        )
         .with_state(state.clone());
 
     let listener = tokio::net::TcpListener::bind(&state.config.address).await?;
+    tracing::info!("spool listening on {}", state.config.address);
     axum::serve(listener, app).await?;
 
     Ok(())
