@@ -16,7 +16,23 @@ pub async fn download(
     State(state): State<SpoolState>,
     mut multipart: Multipart,
 ) -> Result<(StatusCode, Json<String>), ErrorStatus> {
-    let mut mimetype: Option<String> = None;
+    let Some(mut field) = multipart
+        .next_field()
+        .await
+        .map_err(|_| (StatusCode::BAD_REQUEST, "invalid multipart body"))?
+    else {
+        return Err((StatusCode::BAD_REQUEST, "missing file field").into());
+    };
+
+    if field.name() != Some("file") {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "please include a file header",
+            "request did not include a file header",
+        )
+            .into());
+    }
+
     let max_bytes = state.config.max_file_size_bytes as u64;
     let (task, mut trec) = mpsc::channel::<Bytes>(8);
 
@@ -47,50 +63,35 @@ pub async fn download(
         Ok((hash_hex, fsize_bytes))
     });
 
-    if let Some(mut field) = multipart
-        .next_field()
+    let mut sniffed: Option<&str> = None;
+    let mut first_chunk = true;
+
+    while let Some(chunk) = field
+        .chunk()
         .await
-        .map_err(|_| (StatusCode::BAD_REQUEST, "invalid multipart body"))?
+        .map_err(|_| (StatusCode::BAD_REQUEST, "failed to read field chunks"))?
     {
-        if field.name() != Some("file") {
-            return Err((
-                StatusCode::BAD_REQUEST,
-                "please include a file header",
-                "request did not include a file header",
-            )
-                .into());
+        if first_chunk {
+            first_chunk = false;
+            sniffed = infer::get(&chunk).map(|kind| kind.mime_type());
         }
-
-        let mut sniffed: Option<&str> = None;
-        let mut first_chunk = true;
-
-        while let Some(chunk) = field
-            .chunk()
+        task.send(chunk)
             .await
-            .map_err(|_| (StatusCode::BAD_REQUEST, "failed to read field chunks"))?
-        {
-            if first_chunk {
-                first_chunk = false;
-                sniffed = infer::get(&chunk).map(|kind| kind.mime_type());
-            }
-            task.send(chunk)
-                .await
-                .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to write file"))?;
-        }
-
-        mimetype = sniffed
-            .or_else(|| {
-                field
-                    .content_type()
-                    .filter(|ctype| *ctype != "application/octet-stream")
-            })
-            .or_else(|| {
-                field
-                    .file_name()
-                    .and_then(|name| mime_guess::from_path(name).first_raw())
-            })
-            .map(str::to_owned);
+            .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to write file"))?;
     }
+
+    let mimetype = sniffed
+        .or_else(|| {
+            field
+                .content_type()
+                .filter(|ctype| *ctype != "application/octet-stream")
+        })
+        .or_else(|| {
+            field
+                .file_name()
+                .and_then(|name| mime_guess::from_path(name).first_raw())
+        })
+        .map(str::to_owned);
 
     drop(task);
 
@@ -104,8 +105,8 @@ pub async fn download(
     )
     .await?;
     Ok((
-        StatusCode::OK,
-        Json(format!(r"{}/{}", state.config.address, hash_hex)), // this will be replaced with config.domain in the future
+        StatusCode::CREATED,
+        Json(format!(r"{}/{}", state.config.address, hash_hex)),
     ))
 }
 
@@ -120,7 +121,9 @@ mod tests {
         body::Body,
         extract::{FromRequest, Multipart, State},
         http::{Request, StatusCode},
+        response::IntoResponse,
     };
+    use sha2::Digest;
     use sqlx::sqlite::SqlitePoolOptions;
     use tempfile::TempDir;
 
@@ -174,7 +177,7 @@ mod tests {
             .await
             .expect("upload should succeed");
         let hash = hex::encode(sha2::Sha256::digest(data));
-        assert_eq!(status, StatusCode::OK);
+        assert_eq!(status, StatusCode::CREATED);
         assert_eq!(url, format!("http://localhost/{hash}"));
         assert_eq!(
             std::fs::read(storage.path().join(&hash)).expect("file should exist"),
@@ -231,29 +234,39 @@ mod tests {
         let storage = TempDir::new().expect("temporary storage should be created");
         let state = test_state(&storage, 100).await;
         let body = file_part("other", "", "data");
-        let response = download(State(state), multipart(&body).await)
+        let response = download(State(state.clone()), multipart(&body).await)
             .await
             .expect_err("wrong field should fail")
             .into_response();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            std::fs::read_dir(storage.path())
+                .expect("storage should exist")
+                .count(),
+            0
+        );
     }
 
     #[tokio::test]
-    async fn empty_multipart_body_uploads_empty_content() {
+    async fn rejects_multipart_body_without_file_field() {
         let storage = TempDir::new().expect("temporary storage should be created");
         let state = test_state(&storage, 100).await;
-        let response = download(State(state.clone()), multipart("--boundary--\r\n").await).await;
-        assert!(
-            response.is_ok(),
-            "missing file field currently becomes an empty upload"
-        );
+        let response = download(State(state.clone()), multipart("--boundary--\r\n").await)
+            .await
+            .expect_err("missing file field should fail")
+            .into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
         let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM files")
             .fetch_one(&state.db)
             .await
             .expect("metadata query should succeed");
-        assert_eq!(count, 1);
+        assert_eq!(count, 0);
+        assert_eq!(
+            std::fs::read_dir(storage.path())
+                .expect("storage should exist")
+                .count(),
+            0
+        );
     }
-
-    use axum::response::IntoResponse;
-    use sha2::Digest;
 }
