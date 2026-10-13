@@ -13,7 +13,7 @@ use crate::{SpoolState, types::ErrorStatus};
 
 use crate::serve::db::get_file_mimetype;
 
-const DOWNLOAD_CHUNK_SIZE: usize = 256 * 1024;
+const DOWNLOAD_CHUNK_SIZE: usize = 512 * 1024;
 
 pub async fn serve(
     State(state): State<SpoolState>,
