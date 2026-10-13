@@ -1,9 +1,8 @@
 use axum::extract::Path;
-use axum::http::HeaderName;
 use axum::{
     body::Body,
     extract::State,
-    http::{StatusCode, header},
+    http::{HeaderName, StatusCode, header, header::CONTENT_DISPOSITION},
     response::IntoResponse,
 };
 use std::path::PathBuf;
@@ -40,7 +39,79 @@ pub async fn serve(
             HeaderName::from_static("x-content-type-options"),
             "nosniff".parse().unwrap(),
         ),
+        (CONTENT_DISPOSITION, "attachment".parse().unwrap()),
     ];
 
     Ok((headers, body))
+}
+
+#[allow(clippy::expect_used)]
+#[cfg(test)]
+mod tests {
+    use super::serve;
+    use crate::{Config, SpoolState};
+    use axum::{
+        body::to_bytes,
+        extract::{Path, State},
+        http::{StatusCode, header},
+        response::IntoResponse,
+    };
+    use sqlx::sqlite::SqlitePoolOptions;
+    use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn serves_untrusted_html_as_attachment_with_security_headers() {
+        let storage = TempDir::new().expect("storage directory should be created");
+        let hash = "a".repeat(64);
+        tokio::fs::write(storage.path().join(&hash), "<script>alert(1)</script>")
+            .await
+            .expect("fixture file should be written");
+        let db = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("in-memory database should connect");
+        sqlx::migrate!("./migrations")
+            .run(&db)
+            .await
+            .expect("migrations should succeed");
+        sqlx::query(
+            "INSERT INTO files (hash_filename, mimetype, file_size_bytes) VALUES (?, ?, ?)",
+        )
+        .bind(&hash)
+        .bind("text/html")
+        .bind(26_i64)
+        .execute(&db)
+        .await
+        .expect("HTML metadata should be inserted");
+
+        let response = serve(
+            State(SpoolState {
+                db,
+                config: Config {
+                    address: "http://localhost".to_owned(),
+                    max_file_size_bytes: 1024,
+                    storage_path: storage.path().to_string_lossy().into_owned(),
+                },
+            }),
+            Path(hash.clone()),
+        )
+        .await
+        .expect("known file should be served")
+        .into_response();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()[header::CONTENT_TYPE], "text/html");
+        assert_eq!(response.headers()["x-content-type-options"], "nosniff");
+        assert_eq!(
+            response.headers()[header::CONTENT_DISPOSITION],
+            "attachment"
+        );
+        assert_eq!(
+            to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("response body should read"),
+            "<script>alert(1)</script>"
+        );
+    }
 }

@@ -37,6 +37,10 @@ The server listens on the configured address (port `3000` by default).
 - `POST /upload` — upload multipart form data. A successful upload returns `201 Created`. The stored file is addressed by its SHA-256 hash.
 - `GET /{file_hash}` — retrieve a file by its 64-character SHA-256 hash.
 
+Uploaded files are served with their recorded `Content-Type`, `X-Content-Type-Options: nosniff`, and `Content-Disposition: attachment`. Browsers should download these responses rather than render them as pages. A page hosted elsewhere can still embed supported image files from spool, though directly visiting an image URL also prompts a download.
+
+Uploads are untrusted content. Before exposing spool publicly, serve it from a separate origin that does not share cookies or other credentials with any trusted application. The response headers reduce browser interpretation risks, but deployment should preserve this origin boundary; authentication, quotas, and rate limiting are not implemented.
+
 Example download:
 
 ```sh
