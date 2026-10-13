@@ -87,3 +87,22 @@ CI runs clippy and `cargo llvm-cov` with `--all-features`, so changes must compi
 - If a request is ambiguous or conflicts with an invariant above, stop and ask.
 - Mention bugs you notice outside your task in your summary instead of fixing them silently.
 - When finished, summarize what changed and why, and flag assumptions.
+
+## Commits and attribution
+
+If you create a commit, you must end the message with a `Co-authored-by` trailer
+naming yourself, so changes can be traced back to the agent that made them:
+
+```
+Co-authored-by: <Tool / Model name and version> <your email>
+```
+
+- Use the address your tool already commits with (e.g. Claude Code uses
+  `noreply@anthropic.com`, Codex uses `codex@openai.com`). If you don't have one, use a `noreply` address
+  for your vendor. Don't invent a personal-looking address.
+- Put the specific model in the name when you know it, e.g.
+  `Claude Opus 5.5` rather than just `Claude`.
+- Keep the trailer on its own line after a blank line at the end of the message.
+- If you amend or squash commits, keep the trailers from the originals.
+- Never commit as, or impersonate, the human author.
+- Don't commit unless asked.
