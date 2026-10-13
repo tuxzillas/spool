@@ -1,4 +1,5 @@
 use axum::extract::Path;
+use axum::http::HeaderName;
 use axum::{
     body::Body,
     extract::State,
@@ -33,7 +34,13 @@ pub async fn serve(
     let stream = ReaderStream::with_capacity(file, DOWNLOAD_CHUNK_SIZE);
     let body = Body::from_stream(stream);
 
-    let headers = [(header::CONTENT_TYPE, mimetype)];
+    let headers = [
+        (header::CONTENT_TYPE, mimetype),
+        (
+            HeaderName::from_static("x-content-type-options"),
+            "nosniff".parse().unwrap(),
+        ),
+    ];
 
     Ok((headers, body))
 }
