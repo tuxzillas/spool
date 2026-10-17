@@ -1,11 +1,15 @@
+// TODO: rename this file to errors.rs
+
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
 
 use tempfile::PersistError;
+use thiserror::Error;
 
-#[derive(Debug)]
+#[derive(Error, Debug)]
+#[error("{public_message}")]
 pub struct ErrorStatus {
     code: StatusCode,
     public_message: String,
@@ -35,8 +39,8 @@ impl From<tokio::task::JoinError> for ErrorStatus {
 impl From<PersistError> for ErrorStatus {
     fn from(err: PersistError) -> Self {
         Self {
-            code: StatusCode::CONFLICT,
-            public_message: "file exists".to_string(),
+            code: StatusCode::INTERNAL_SERVER_ERROR,
+            public_message: "internal server error".to_string(),
             log_message: err.to_string(),
         }
     }
