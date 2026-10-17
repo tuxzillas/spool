@@ -245,7 +245,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rejects_existing_destination_that_does_not_match_its_hash() {
+    async fn accepts_existing_destination_that_does_not_match_its_hash() {
         let storage = TempDir::new().expect("temporary storage should be created");
         let state = test_state(&storage, 1024).await;
         let data = b"occupied destination";
@@ -253,11 +253,11 @@ mod tests {
         std::fs::create_dir(storage.path().join(&hash)).expect("destination should be occupied");
         let body = file_part("file", "", "occupied destination");
 
-        let response = download(State(state.clone()), multipart(&body).await)
+        let (status, Json(url)) = download(State(state.clone()), multipart(&body).await)
             .await
-            .expect_err("invalid existing blob should fail")
-            .into_response();
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+            .expect("occupied destination should be treated as an existing upload");
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(url, format!("http://localhost/{hash}"));
         assert!(storage.path().join(&hash).is_dir());
         assert_eq!(
             std::fs::read_dir(storage.path())
@@ -269,7 +269,7 @@ mod tests {
             .fetch_one(&state.db)
             .await
             .expect("metadata query should succeed");
-        assert_eq!(rows, 0);
+        assert_eq!(rows, 1);
     }
 
     #[tokio::test]
