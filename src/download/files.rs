@@ -273,6 +273,28 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn rejects_upload_when_storage_path_is_not_a_directory() {
+        let storage = TempDir::new().expect("temporary storage should be created");
+        let storage_path = storage.path().join("storage-file");
+        std::fs::write(&storage_path, b"not a directory")
+            .expect("storage path placeholder should be created");
+        let mut state = test_state(&storage, 1024).await;
+        state.config.storage_path = storage_path.to_string_lossy().into_owned();
+        let body = file_part("file", "", "upload");
+
+        let response = download(State(state.clone()), multipart(&body).await)
+            .await
+            .expect_err("unusable storage path should fail")
+            .into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM files")
+            .fetch_one(&state.db)
+            .await
+            .expect("metadata query should succeed");
+        assert_eq!(rows, 0);
+    }
+
+    #[tokio::test]
     async fn accepts_empty_file_and_records_zero_bytes() {
         let storage = TempDir::new().expect("temporary storage should be created");
         let state = test_state(&storage, 0).await;
