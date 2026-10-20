@@ -81,8 +81,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                      _span: &tracing::Span| {
                         tracing::info!(
                             status = %response.status(),
-                            latency = ?latency,
-                            "finished processing request"
+                            header_latency = ?latency,
+                            "started serving response"
+                        );
+                    },
+                )
+                .on_eos(
+                    |_trailers: Option<&axum::http::HeaderMap>,
+                     stream_latency: std::time::Duration,
+                     _span: &tracing::Span| {
+                        tracing::info!(
+                            latency = ?stream_latency,
+                            "finished serving response"
                         );
                     },
                 ),
