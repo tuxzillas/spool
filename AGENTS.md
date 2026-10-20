@@ -7,7 +7,7 @@ Guidance for AI coding agents working on **spool**. Read this fully before chang
 A small Rust file upload/serving service. Files are stored on disk under their **SHA-256 hash**; metadata lives in SQLite. Pre-0.1, under active development.
 
 - Stack: Rust (edition 2024), Axum, Tokio, sqlx (SQLite default), tower-http tracing, TOML for configs.
-- Goal for downloads: push as many bytes as possible. The serve path is performance-sensitive.
+- Goal for downloads: push as many bytes as possible. everything performance-sensitive.
 - Containerization is planned, not done. No auth yet: the `users` / `api_keys` / `user_files` tables exist but no endpoint uses them.
 
 ## Layout
@@ -106,3 +106,4 @@ Co-authored-by: <Tool / Model name and version> <your email>
 - If you amend or squash commits, keep the trailers from the originals.
 - Never commit as, or impersonate, the human author.
 - Don't commit unless asked.
+- If conversation context mentions an issue, include the issue number in the commit message (e.g. `Fixes #123`).
