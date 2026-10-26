@@ -29,12 +29,14 @@ pub struct Config {
 // I want to use the query! macro, but it isn't available using AnyPool
 // so I SOMEHOW need to make some dualie Postgres and Sqlite support, but thats future tuxzilla problem
 async fn connect_db() -> Result<SqlitePool, sqlx::Error> {
-    let database_url = "sqlite://spool.db?mode=rwc";
+    let database_url =
+        std::env::var("DATABASE_URL").map_err(|error| sqlx::Error::Configuration(error.into()))?;
 
-    SqlitePool::connect(database_url).await
+    SqlitePool::connect(&database_url).await
 }
 
-async fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
+async fn load_configs() -> Result<Config, Box<dyn std::error::Error>> {
+    dotenvy::dotenv().ok();
     let path = "spool.toml";
     let contents = tokio::fs::read_to_string(path).await?;
     let config: Config = toml::from_str(&contents)?;
@@ -53,7 +55,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let state = SpoolState {
         db,
-        config: load_config().await?,
+        config: load_configs().await?,
     };
 
     let app = Router::new()
