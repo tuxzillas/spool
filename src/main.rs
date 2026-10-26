@@ -35,8 +35,7 @@ async fn connect_db() -> Result<SqlitePool, sqlx::Error> {
     SqlitePool::connect(&database_url).await
 }
 
-async fn load_configs() -> Result<Config, Box<dyn std::error::Error>> {
-    dotenvy::dotenv().ok();
+async fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
     let path = "spool.toml";
     let contents = tokio::fs::read_to_string(path).await?;
     let config: Config = toml::from_str(&contents)?;
@@ -49,13 +48,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tracing::info!("Starting spool server...");
 
+    dotenvy::dotenv().ok();
+
     let db = connect_db().await?;
 
     sqlx::migrate!("./migrations").run(&db).await?;
 
     let state = SpoolState {
         db,
-        config: load_configs().await?,
+        config: load_config().await?,
     };
 
     let app = Router::new()
