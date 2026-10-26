@@ -309,6 +309,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn accepts_file_exactly_at_configured_limit() {
+        let storage = TempDir::new().expect("temporary storage should be created");
+        let state = test_state(&storage, 4).await;
+        let body = file_part("file", "", "four");
+
+        let (status, Json(url)) = download(State(state.clone()), multipart(&body).await)
+            .await
+            .expect("file at the configured payload limit should succeed");
+        assert_eq!(status, StatusCode::CREATED);
+        let hash = hex::encode(sha2::Sha256::digest(b"four"));
+        assert_eq!(url, format!("http://localhost/{hash}"));
+        assert_eq!(
+            std::fs::read(storage.path().join(&hash)).expect("blob should exist"),
+            b"four"
+        );
+        let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM files")
+            .fetch_one(&state.db)
+            .await
+            .expect("metadata query should succeed");
+        assert_eq!(rows, 1);
+    }
+
+    #[tokio::test]
     async fn rejects_file_larger_than_limit_without_persisting_it() {
         let storage = TempDir::new().expect("temporary storage should be created");
         let state = test_state(&storage, 3).await;

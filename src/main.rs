@@ -26,6 +26,14 @@ pub struct Config {
     pub storage_path: String,
 }
 
+// Multipart boundaries and headers are part of the HTTP body, not the file payload.
+// Keep them bounded while leaving enough room for normal multipart framing.
+const MULTIPART_OVERHEAD_LIMIT_BYTES: usize = 64 * 1024;
+
+fn upload_body_limit(max_file_size_bytes: usize) -> usize {
+    max_file_size_bytes.saturating_add(MULTIPART_OVERHEAD_LIMIT_BYTES)
+}
+
 // I want to use the query! macro, but it isn't available using AnyPool
 // so I SOMEHOW need to make some dualie Postgres and Sqlite support, but thats future tuxzilla problem
 async fn connect_db() -> Result<SqlitePool, sqlx::Error> {
@@ -64,8 +72,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/{file_hash}", get(serve::files::serve))
         .route(
             "/upload",
-            post(download::files::download)
-                .layer(DefaultBodyLimit::max(state.config.max_file_size_bytes)),
+            post(download::files::download).layer(DefaultBodyLimit::max(upload_body_limit(
+                state.config.max_file_size_bytes,
+            ))),
         )
         .layer(
             TraceLayer::new_for_http()
@@ -107,4 +116,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     axum::serve(listener, app).await?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MULTIPART_OVERHEAD_LIMIT_BYTES, upload_body_limit};
+
+    #[test]
+    fn upload_body_limit_adds_bounded_multipart_overhead_without_overflow() {
+        assert_eq!(upload_body_limit(100), 100 + MULTIPART_OVERHEAD_LIMIT_BYTES);
+        assert_eq!(upload_body_limit(usize::MAX), usize::MAX);
+    }
 }
