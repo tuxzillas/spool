@@ -1412,6 +1412,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "bytes",
+ "dotenvy",
  "hex",
  "hex-literal",
  "infer",
@@ -1506,7 +1507,6 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "sqlx-core",
- "sqlx-postgres",
  "sqlx-sqlite",
  "syn 2.0.119",
  "tokio",

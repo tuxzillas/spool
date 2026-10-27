@@ -5,8 +5,8 @@ use axum::{
 };
 use bytes::Bytes;
 use sha2::{Digest, Sha256};
+use std::{io::Write, path::Path};
 use tokio::sync::mpsc;
-use {std::io::Write, std::path::Path};
 
 use crate::SpoolState;
 use crate::download::db::insert_file;
@@ -59,7 +59,14 @@ pub async fn download(
 
         let hash_hex = hex::encode(hasher.finalize());
 
-        file.persist_noclobber(Path::new(&state.config.storage_path).join(&hash_hex))?;
+        match file.persist_noclobber(Path::new(&state.config.storage_path).join(&hash_hex)) {
+            Ok(_) => {}
+            Err(error) if error.error.kind() == std::io::ErrorKind::AlreadyExists => {
+                drop(error.file);
+            }
+            Err(error) => return Err(error.into()),
+        }
+
         Ok((hash_hex, fsize_bytes))
     });
 
@@ -193,6 +200,101 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn repeated_upload_returns_created_and_preserves_blob_metadata() {
+        let storage = TempDir::new().expect("temporary storage should be created");
+        let state = test_state(&storage, 1024).await;
+        let data = b"repeat upload";
+        let body = format!(
+            "--boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"first.txt\"\r\nContent-Type: text/plain\r\n\r\n{}\r\n--boundary--\r\n",
+            String::from_utf8_lossy(data)
+        );
+
+        for _ in 0..2 {
+            let (status, Json(url)) = download(State(state.clone()), multipart(&body).await)
+                .await
+                .expect("identical upload should succeed");
+            let hash = hex::encode(sha2::Sha256::digest(data));
+            assert_eq!(status, StatusCode::CREATED);
+            assert_eq!(url, format!("http://localhost/{hash}"));
+        }
+
+        let hash = hex::encode(sha2::Sha256::digest(data));
+        assert_eq!(
+            std::fs::read(storage.path().join(&hash)).expect("blob should exist"),
+            data
+        );
+        assert_eq!(
+            std::fs::read_dir(storage.path())
+                .expect("storage should exist")
+                .count(),
+            1
+        );
+        let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM files WHERE hash_filename = ?")
+            .bind(&hash)
+            .fetch_one(&state.db)
+            .await
+            .expect("metadata query should succeed");
+        assert_eq!(rows, 1);
+        let row: (String, i64) =
+            sqlx::query_as("SELECT mimetype, file_size_bytes FROM files WHERE hash_filename = ?")
+                .bind(&hash)
+                .fetch_one(&state.db)
+                .await
+                .expect("metadata should exist");
+        assert_eq!(row, ("text/plain".to_owned(), data.len() as i64));
+    }
+
+    #[tokio::test]
+    async fn accepts_existing_destination_that_does_not_match_its_hash() {
+        let storage = TempDir::new().expect("temporary storage should be created");
+        let state = test_state(&storage, 1024).await;
+        let data = b"occupied destination";
+        let hash = hex::encode(sha2::Sha256::digest(data));
+        std::fs::create_dir(storage.path().join(&hash)).expect("destination should be occupied");
+        let body = file_part("file", "", "occupied destination");
+
+        let (status, Json(url)) = download(State(state.clone()), multipart(&body).await)
+            .await
+            .expect("occupied destination should be treated as an existing upload");
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(url, format!("http://localhost/{hash}"));
+        assert!(storage.path().join(&hash).is_dir());
+        assert_eq!(
+            std::fs::read_dir(storage.path())
+                .expect("storage should exist")
+                .count(),
+            1
+        );
+        let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM files")
+            .fetch_one(&state.db)
+            .await
+            .expect("metadata query should succeed");
+        assert_eq!(rows, 1);
+    }
+
+    #[tokio::test]
+    async fn rejects_upload_when_storage_path_is_not_a_directory() {
+        let storage = TempDir::new().expect("temporary storage should be created");
+        let storage_path = storage.path().join("storage-file");
+        std::fs::write(&storage_path, b"not a directory")
+            .expect("storage path placeholder should be created");
+        let mut state = test_state(&storage, 1024).await;
+        state.config.storage_path = storage_path.to_string_lossy().into_owned();
+        let body = file_part("file", "", "upload");
+
+        let response = download(State(state.clone()), multipart(&body).await)
+            .await
+            .expect_err("unusable storage path should fail")
+            .into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM files")
+            .fetch_one(&state.db)
+            .await
+            .expect("metadata query should succeed");
+        assert_eq!(rows, 0);
+    }
+
+    #[tokio::test]
     async fn accepts_empty_file_and_records_zero_bytes() {
         let storage = TempDir::new().expect("temporary storage should be created");
         let state = test_state(&storage, 0).await;
@@ -204,6 +306,29 @@ mod tests {
             .await
             .expect("metadata query should succeed");
         assert_eq!(count, 1);
+    }
+
+    #[tokio::test]
+    async fn accepts_file_exactly_at_configured_limit() {
+        let storage = TempDir::new().expect("temporary storage should be created");
+        let state = test_state(&storage, 4).await;
+        let body = file_part("file", "", "four");
+
+        let (status, Json(url)) = download(State(state.clone()), multipart(&body).await)
+            .await
+            .expect("file at the configured payload limit should succeed");
+        assert_eq!(status, StatusCode::CREATED);
+        let hash = hex::encode(sha2::Sha256::digest(b"four"));
+        assert_eq!(url, format!("http://localhost/{hash}"));
+        assert_eq!(
+            std::fs::read(storage.path().join(&hash)).expect("blob should exist"),
+            b"four"
+        );
+        let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM files")
+            .fetch_one(&state.db)
+            .await
+            .expect("metadata query should succeed");
+        assert_eq!(rows, 1);
     }
 
     #[tokio::test]
