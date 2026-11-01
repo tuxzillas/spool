@@ -1,10 +1,11 @@
 use axum::{
     Router,
-    extract::DefaultBodyLimit,
+    extract::{ConnectInfo, DefaultBodyLimit},
     routing::{get, post},
 };
 
 use sqlx::SqlitePool;
+use std::net::SocketAddr;
 
 use serde::Deserialize;
 use tower_http::trace::TraceLayer;
@@ -78,11 +79,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .layer(
             TraceLayer::new_for_http()
+                // the more I read through this code, I feel as if we're logging **too** much, which for stdout is fine.
+                // for a structured log file it isnt, so I should have like.. a log.rs file or something
+                // to manage all that.
                 .on_request(
                     |request: &axum::http::Request<axum::body::Body>, _span: &tracing::Span| {
+                        let client_ip = request
+                            .extensions()
+                            .get::<ConnectInfo<SocketAddr>>()
+                            .map(|ConnectInfo(address)| address.ip());
+
                         tracing::info!(
                             method = %request.method(),
                             uri = %request.uri(),
+                            client_ip = ?client_ip,
                             "started processing request"
                         );
                     },
@@ -113,7 +123,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let listener = tokio::net::TcpListener::bind(&state.config.address).await?;
     tracing::info!("spool listening on {}", state.config.address);
-    axum::serve(listener, app).await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await?;
 
     Ok(())
 }
