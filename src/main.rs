@@ -79,22 +79,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .layer(
             TraceLayer::new_for_http()
-                // the more I read through this code, I feel as if we're logging **too** much, which for stdout is fine.
-                // for a structured log file it isnt, so I should have like.. a log.rs file or something
-                // to manage all that.
-                .on_request(
-                    |request: &axum::http::Request<axum::body::Body>, _span: &tracing::Span| {
-                        let client_ip = request
-                            .extensions()
-                            .get::<ConnectInfo<SocketAddr>>()
-                            .map(|ConnectInfo(address)| address.ip());
+                .make_span_with(|request: &axum::http::Request<axum::body::Body>| {
+                    let client_ip = request
+                        .extensions()
+                        .get::<ConnectInfo<SocketAddr>>()
+                        .map(|ConnectInfo(address)| address.ip());
 
-                        tracing::info!(
-                            method = %request.method(),
-                            uri = %request.uri(),
-                            client_ip = ?client_ip,
-                            "started processing request"
-                        );
+                    tracing::info_span!(
+                        "http_request",
+                        method = %request.method(),
+                        uri = %request.uri(),
+                        client_ip = ?client_ip,
+                    )
+                })
+                .on_request(
+                    |_request: &axum::http::Request<axum::body::Body>, _span: &tracing::Span| {
+                        // nothing ever happens!
                     },
                 )
                 .on_response(
@@ -103,18 +103,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                      _span: &tracing::Span| {
                         tracing::info!(
                             status = %response.status(),
-                            header_latency = ?latency,
-                            "started serving response"
-                        );
-                    },
-                )
-                .on_eos(
-                    |_trailers: Option<&axum::http::HeaderMap>,
-                     stream_latency: std::time::Duration,
-                     _span: &tracing::Span| {
-                        tracing::info!(
-                            latency = ?stream_latency,
-                            "finished serving response"
+                            latency = ?latency,
                         );
                     },
                 ),
