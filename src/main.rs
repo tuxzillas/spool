@@ -92,11 +92,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         client_ip = ?client_ip,
                     )
                 })
-                .on_request(
-                    |_request: &axum::http::Request<axum::body::Body>, _span: &tracing::Span| {
-                        // nothing ever happens!
-                    },
-                )
                 .on_response(
                     |response: &axum::http::Response<_>,
                      latency: std::time::Duration,
