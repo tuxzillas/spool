@@ -1,3 +1,6 @@
+// Copyright 2026 Tuxzilla (https://tuxzilla.com)
+// SPDX-License-Identifier: Apache-2.0
+
 use sqlx::SqlitePool;
 use sqlx::{FromRow, query_as};
 
