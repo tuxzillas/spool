@@ -1,4 +1,7 @@
-// TODO: rename this file to errors.rs
+// Copyright 2026 Tuxzilla (https://tuxzilla.com)
+// SPDX-License-Identifier: Apache-2.0
+
+// TODO: rename this file to errors.rs (i'll get to it one day.)
 
 use axum::{
     http::StatusCode,

@@ -1,10 +1,14 @@
+// Copyright 2026 Tuxzilla (https://tuxzilla.com)
+// SPDX-License-Identifier: Apache-2.0
+
 use axum::{
     Router,
-    extract::DefaultBodyLimit,
+    extract::{ConnectInfo, DefaultBodyLimit},
     routing::{get, post},
 };
 
 use sqlx::SqlitePool;
+use std::net::SocketAddr;
 
 use serde::Deserialize;
 use tower_http::trace::TraceLayer;
@@ -78,33 +82,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .layer(
             TraceLayer::new_for_http()
-                .on_request(
-                    |request: &axum::http::Request<axum::body::Body>, _span: &tracing::Span| {
-                        tracing::info!(
-                            method = %request.method(),
-                            uri = %request.uri(),
-                            "started processing request"
-                        );
-                    },
-                )
+                .make_span_with(|request: &axum::http::Request<axum::body::Body>| {
+                    let client_ip = request
+                        .extensions()
+                        .get::<ConnectInfo<SocketAddr>>()
+                        .map(|ConnectInfo(address)| address.ip());
+
+                    tracing::info_span!(
+                        "http_request",
+                        method = %request.method(),
+                        uri = %request.uri(),
+                        client_ip = ?client_ip,
+                    )
+                })
                 .on_response(
                     |response: &axum::http::Response<_>,
                      latency: std::time::Duration,
                      _span: &tracing::Span| {
                         tracing::info!(
                             status = %response.status(),
-                            header_latency = ?latency,
-                            "started serving response"
-                        );
-                    },
-                )
-                .on_eos(
-                    |_trailers: Option<&axum::http::HeaderMap>,
-                     stream_latency: std::time::Duration,
-                     _span: &tracing::Span| {
-                        tracing::info!(
-                            latency = ?stream_latency,
-                            "finished serving response"
+                            latency = ?latency,
                         );
                     },
                 ),
@@ -113,7 +110,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let listener = tokio::net::TcpListener::bind(&state.config.address).await?;
     tracing::info!("spool listening on {}", state.config.address);
-    axum::serve(listener, app).await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await?;
 
     Ok(())
 }

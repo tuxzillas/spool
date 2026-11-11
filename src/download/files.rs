@@ -1,3 +1,6 @@
+// Copyright 2026 Tuxzilla (https://tuxzilla.com)
+// SPDX-License-Identifier: Apache-2.0
+
 use axum::{
     Json,
     extract::{Multipart, State},
@@ -32,6 +35,9 @@ pub async fn download(
         )
             .into());
     }
+
+    // i weirdly feel like I should put this in a module
+    // why? no clue.
 
     let max_bytes = state.config.max_file_size_bytes as u64;
     let (task, mut trec) = mpsc::channel::<Bytes>(8);
@@ -107,8 +113,8 @@ pub async fn download(
     insert_file(
         &state.db,
         &hash_hex,
-        &mimetype.unwrap_or_else(|| "application/octet-stream".to_owned()),
-        fsize_bytes.cast_signed(),
+        mimetype.as_deref().unwrap_or("application/octet-stream"),
+        i64::try_from(fsize_bytes).unwrap_or(0),
     )
     .await?;
     Ok((
