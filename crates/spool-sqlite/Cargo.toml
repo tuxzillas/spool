@@ -1,0 +1,8 @@
+[package]
+name = "spool-sqlite"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+sqlx = { version = "0.8", default-features = false, features = ["sqlite", "runtime-tokio", "macros"] }
+tokio = "1.54.1"
