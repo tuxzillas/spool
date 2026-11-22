@@ -42,7 +42,7 @@ mod tests {
             .connect("sqlite::memory:")
             .await
             .expect("in-memory database should connect");
-        sqlx::migrate!("./migrations")
+        sqlx::migrate!("../../migrations")
             .run(&db)
             .await
             .expect("migrations should succeed");

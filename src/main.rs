@@ -8,7 +8,9 @@ use axum::{
 };
 
 use sqlx::SqlitePool;
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use std::net::SocketAddr;
+use std::str::FromStr;
 
 use serde::Deserialize;
 use tower_http::trace::TraceLayer;
@@ -38,13 +40,21 @@ fn upload_body_limit(max_file_size_bytes: usize) -> usize {
     max_file_size_bytes.saturating_add(MULTIPART_OVERHEAD_LIMIT_BYTES)
 }
 
-// I want to use the query! macro, but it isn't available using AnyPool
-// so I SOMEHOW need to make some dualie Postgres and Sqlite support, but thats future tuxzilla problem
 async fn connect_db() -> Result<SqlitePool, sqlx::Error> {
     let database_url =
         std::env::var("DATABASE_URL").map_err(|error| sqlx::Error::Configuration(error.into()))?;
 
-    SqlitePool::connect(&database_url).await
+    let options = SqliteConnectOptions::from_str(&database_url)?
+        // when 10 1GB uploads were all taken in at once, each writer got done at the same time
+        // and proceeded to write all their metadata at once, and make the database write lock.
+        // another reason for postgres, of course.
+        .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
+        .busy_timeout(std::time::Duration::from_secs(30));
+
+    SqlitePoolOptions::new()
+        .max_connections(10)
+        .connect_with(options)
+        .await
 }
 
 async fn load_config() -> Result<Config, Box<dyn std::error::Error>> {

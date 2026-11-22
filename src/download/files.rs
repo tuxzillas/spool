@@ -12,7 +12,6 @@ use std::{io::Write, path::Path};
 use tokio::sync::mpsc;
 
 use crate::SpoolState;
-use crate::download::db::insert_file;
 use crate::types::ErrorStatus;
 
 pub async fn download(
@@ -110,7 +109,7 @@ pub async fn download(
 
     let (hash_hex, fsize_bytes) = write.await??;
 
-    insert_file(
+    spool_sqlite::insert_file(
         &state.db,
         &hash_hex,
         mimetype.as_deref().unwrap_or("application/octet-stream"),
