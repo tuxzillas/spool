@@ -14,8 +14,6 @@ use tokio_util::io::ReaderStream;
 
 use crate::{SpoolState, types::ErrorStatus};
 
-use crate::serve::db::get_file_mimetype;
-
 const DOWNLOAD_CHUNK_SIZE: usize = 512 * 1024;
 
 pub async fn serve(
@@ -29,7 +27,7 @@ pub async fn serve(
     else {
         return Err((StatusCode::NOT_FOUND, "File not found").into());
     };
-    let Some(mimetype) = get_file_mimetype(&state.db, &file_hash).await? else {
+    let Some(mimetype) = spool_sqlite::get_file_mimetype(&state.db, &file_hash).await? else {
         return Err((StatusCode::NOT_FOUND, "File not found").into());
     };
 
