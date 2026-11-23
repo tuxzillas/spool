@@ -1,14 +1,8 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+// Copyright 2026 Tuxzilla (https://tuxzilla.com)
+// SPDX-License-Identifier: Apache-2.0
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+mod files;
+mod metadata;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+pub use files::insert_file;
+pub use metadata::get_file_mimetype;

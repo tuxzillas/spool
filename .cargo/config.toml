@@ -1,0 +1,4 @@
+[env]
+# Each database crate has its own SQLx cache; the workspace .env uses SQLite.
+# Set SQLX_OFFLINE=false explicitly when refreshing a crate's cache with sqlx-cli.
+SQLX_OFFLINE = { value = "true", force = false }
