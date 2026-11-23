@@ -1447,6 +1447,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "spool-core"
+version = "0.1.0"
+
+[[package]]
+name = "spool-postgres"
+version = "0.1.0"
+
+[[package]]
 name = "spool-sqlite"
 version = "0.1.0"
 dependencies = [

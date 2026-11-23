@@ -26,6 +26,8 @@ dotenvy = "0.15.7"
 [workspace]
 resolver = "3"
 members = [
+  "crates/spool-core",
+  "crates/spool-postgres",
   "crates/spool-sqlite"
 ]
 
