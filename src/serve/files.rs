@@ -14,8 +14,6 @@ use tokio_util::io::ReaderStream;
 
 use crate::{SpoolState, types::ErrorStatus};
 
-use crate::serve::db::get_file_mimetype;
-
 const DOWNLOAD_CHUNK_SIZE: usize = 512 * 1024;
 
 pub async fn serve(
@@ -29,7 +27,7 @@ pub async fn serve(
     else {
         return Err((StatusCode::NOT_FOUND, "File not found").into());
     };
-    let Some(mimetype) = get_file_mimetype(&state.db, &file_hash).await? else {
+    let Some(mimetype) = state.db.get_file_metadata(&file_hash).await? else {
         return Err((StatusCode::NOT_FOUND, "File not found").into());
     };
 
@@ -59,6 +57,7 @@ mod tests {
         http::{StatusCode, header},
         response::IntoResponse,
     };
+    use spool_core::Database;
     use sqlx::sqlite::SqlitePoolOptions;
     use tempfile::TempDir;
 
@@ -78,15 +77,10 @@ mod tests {
             .run(&db)
             .await
             .expect("migrations should succeed");
-        sqlx::query(
-            "INSERT INTO files (hash_filename, mimetype, file_size_bytes) VALUES (?, ?, ?)",
-        )
-        .bind(&hash)
-        .bind("text/html")
-        .bind(26_i64)
-        .execute(&db)
-        .await
-        .expect("HTML metadata should be inserted");
+        let db = Database::Sqlite(db);
+        db.insert_file(&hash, "text/html", 26)
+            .await
+            .expect("HTML metadata should be inserted");
 
         let response = serve(
             State(SpoolState {

@@ -1,0 +1,9 @@
+[package]
+name = "spool-core"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+sqlx = { version = "0.9.1", default-features = false, features = ["postgres", "sqlite", "runtime-tokio", "macros", "migrate"] }
+spool-sqlite = { path = "../spool-sqlite" }
+spool-postgres = { path = "../spool-postgres" }

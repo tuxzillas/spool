@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO files (\n            hash_filename,\n            mimetype,\n            file_size_bytes\n        )\n        VALUES ($1, $2, $3)\n        ON CONFLICT (hash_filename) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "04f9dc15a5a5c4ab90bfe7dbb330eac5941b11d3154b1fc20180480c21b0fb78"
+}

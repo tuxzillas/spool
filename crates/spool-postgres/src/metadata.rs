@@ -1,7 +1,7 @@
 // Copyright 2026 Tuxzilla (https://tuxzilla.com)
 // SPDX-License-Identifier: Apache-2.0
 
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 use sqlx::{FromRow, query_as};
 
 #[derive(Debug, FromRow)]
@@ -9,13 +9,13 @@ struct FileMetadata {
     mimetype: String,
 }
 
-pub async fn get_file_mimetype(db: &SqlitePool, hash: &str) -> Result<Option<String>, sqlx::Error> {
+pub async fn get_file_metadata(db: &PgPool, hash: &str) -> Result<Option<String>, sqlx::Error> {
     let result = query_as!(
         FileMetadata,
         r"
         SELECT mimetype
         FROM files
-        WHERE hash_filename = ?
+        WHERE hash_filename = $1
         ",
         hash
     )
@@ -28,36 +28,37 @@ pub async fn get_file_mimetype(db: &SqlitePool, hash: &str) -> Result<Option<Str
 #[allow(clippy::expect_used)]
 #[cfg(test)]
 mod tests {
-    use super::get_file_mimetype;
-    use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};
+    use super::get_file_metadata;
+    use sqlx::{PgPool, postgres::PgPoolOptions};
 
-    async fn test_db() -> SqlitePool {
-        let db = SqlitePoolOptions::new()
+    async fn test_db() -> Option<PgPool> {
+        let database_url = std::env::var("TEST_DATABASE_URL").ok()?;
+        let db = PgPoolOptions::new()
             .max_connections(1)
-            .connect("sqlite::memory:")
+            .connect(&database_url)
             .await
-            .expect("in-memory database should connect");
-        sqlx::migrate!("./migrations")
+            .expect("test database should connect");
+        sqlx::migrate!()
             .run(&db)
             .await
             .expect("migrations should succeed");
-        db
+        Some(db)
     }
 
     #[tokio::test]
     async fn returns_mimetype_for_known_hash() {
-        let db = test_db().await;
+        let Some(db) = test_db().await else { return };
         sqlx::query(
-            "INSERT INTO files (hash_filename, mimetype, file_size_bytes) VALUES (?, ?, ?)",
+            "INSERT INTO files (hash_filename, mimetype, file_size_bytes) VALUES ($1, $2, $3)",
         )
-        .bind("abc123")
+        .bind("metadata-known")
         .bind("image/png")
         .bind(42_i64)
         .execute(&db)
         .await
         .expect("file fixture should insert");
 
-        let mimetype = get_file_mimetype(&db, "abc123")
+        let mimetype = get_file_metadata(&db, "metadata-known")
             .await
             .expect("metadata query should succeed");
 
@@ -66,9 +67,9 @@ mod tests {
 
     #[tokio::test]
     async fn returns_none_for_unknown_hash() {
-        let db = test_db().await;
+        let Some(db) = test_db().await else { return };
 
-        let mimetype = get_file_mimetype(&db, "missing")
+        let mimetype = get_file_metadata(&db, "missing")
             .await
             .expect("metadata query should succeed");
 

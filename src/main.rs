@@ -7,12 +7,8 @@ use axum::{
     routing::{get, post},
 };
 
-use sqlx::SqlitePool;
-use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
-use std::net::SocketAddr;
-use std::str::FromStr;
-
 use serde::Deserialize;
+use std::net::SocketAddr;
 use tower_http::trace::TraceLayer;
 
 mod download;
@@ -21,7 +17,7 @@ mod types;
 
 #[derive(Clone)]
 pub struct SpoolState {
-    db: SqlitePool,
+    db: spool_core::Database,
     config: Config,
 }
 
@@ -40,23 +36,6 @@ fn upload_body_limit(max_file_size_bytes: usize) -> usize {
     max_file_size_bytes.saturating_add(MULTIPART_OVERHEAD_LIMIT_BYTES)
 }
 
-async fn connect_db() -> Result<SqlitePool, sqlx::Error> {
-    let database_url =
-        std::env::var("DATABASE_URL").map_err(|error| sqlx::Error::Configuration(error.into()))?;
-
-    let options = SqliteConnectOptions::from_str(&database_url)?
-        // when 10 1GB uploads were all taken in at once, each writer got done at the same time
-        // and proceeded to write all their metadata at once, and make the database write lock.
-        // another reason for postgres, of course.
-        .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
-        .busy_timeout(std::time::Duration::from_secs(30));
-
-    SqlitePoolOptions::new()
-        .max_connections(10)
-        .connect_with(options)
-        .await
-}
-
 async fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
     let path = "spool.toml";
     let contents = tokio::fs::read_to_string(path).await?;
@@ -72,9 +51,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     dotenvy::dotenv().ok();
 
-    let db = connect_db().await?;
+    let database_url =
+        std::env::var("DATABASE_URL").map_err(|error| sqlx::Error::Configuration(error.into()))?;
 
-    sqlx::migrate!("./migrations").run(&db).await?;
+    let db = spool_core::connect_db(&database_url).await?;
+
+    // sqlx::migrate!("./migrations").run(&db).await?;
 
     let state = SpoolState {
         db,
