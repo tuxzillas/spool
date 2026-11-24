@@ -57,6 +57,7 @@ mod tests {
         http::{StatusCode, header},
         response::IntoResponse,
     };
+    use spool_core::Database;
     use sqlx::sqlite::SqlitePoolOptions;
     use tempfile::TempDir;
 
@@ -76,15 +77,10 @@ mod tests {
             .run(&db)
             .await
             .expect("migrations should succeed");
-        sqlx::query(
-            "INSERT INTO files (hash_filename, mimetype, file_size_bytes) VALUES (?, ?, ?)",
-        )
-        .bind(&hash)
-        .bind("text/html")
-        .bind(26_i64)
-        .execute(&db)
-        .await
-        .expect("HTML metadata should be inserted");
+        let db = Database::Sqlite(db);
+        db.insert_file(&hash, "text/html", 26)
+            .await
+            .expect("HTML metadata should be inserted");
 
         let response = serve(
             State(SpoolState {

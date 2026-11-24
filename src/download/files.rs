@@ -137,8 +137,16 @@ mod tests {
         response::IntoResponse,
     };
     use sha2::Digest;
-    use sqlx::sqlite::SqlitePoolOptions;
+    use spool_core::Database;
+    use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};
     use tempfile::TempDir;
+
+    fn sqlite_pool(database: &Database) -> Option<&SqlitePool> {
+        match database {
+            Database::Sqlite(pool) => Some(pool),
+            Database::Postgres(_) => None,
+        }
+    }
 
     async fn test_state(storage: &TempDir, max_file_size_bytes: usize) -> SpoolState {
         let db = SqlitePoolOptions::new()
@@ -151,7 +159,7 @@ mod tests {
             .await
             .expect("migrations should succeed");
         SpoolState {
-            db,
+            db: Database::Sqlite(db),
             config: Config {
                 address: "http://localhost".to_owned(),
                 max_file_size_bytes,
@@ -199,7 +207,7 @@ mod tests {
         let row: (String, i64) =
             sqlx::query_as("SELECT mimetype, file_size_bytes FROM files WHERE hash_filename = ?")
                 .bind(&hash)
-                .fetch_one(&state.db)
+                .fetch_one(sqlite_pool(&state.db).expect("test database should be SQLite"))
                 .await
                 .expect("metadata should be inserted");
         assert_eq!(row, ("text/plain".to_owned(), data.len() as i64));
@@ -237,14 +245,14 @@ mod tests {
         );
         let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM files WHERE hash_filename = ?")
             .bind(&hash)
-            .fetch_one(&state.db)
+            .fetch_one(sqlite_pool(&state.db).expect("test database should be SQLite"))
             .await
             .expect("metadata query should succeed");
         assert_eq!(rows, 1);
         let row: (String, i64) =
             sqlx::query_as("SELECT mimetype, file_size_bytes FROM files WHERE hash_filename = ?")
                 .bind(&hash)
-                .fetch_one(&state.db)
+                .fetch_one(sqlite_pool(&state.db).expect("test database should be SQLite"))
                 .await
                 .expect("metadata should exist");
         assert_eq!(row, ("text/plain".to_owned(), data.len() as i64));
@@ -272,7 +280,7 @@ mod tests {
             1
         );
         let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM files")
-            .fetch_one(&state.db)
+            .fetch_one(sqlite_pool(&state.db).expect("test database should be SQLite"))
             .await
             .expect("metadata query should succeed");
         assert_eq!(rows, 1);
@@ -294,7 +302,7 @@ mod tests {
             .into_response();
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM files")
-            .fetch_one(&state.db)
+            .fetch_one(sqlite_pool(&state.db).expect("test database should be SQLite"))
             .await
             .expect("metadata query should succeed");
         assert_eq!(rows, 0);
@@ -308,7 +316,7 @@ mod tests {
         let result = download(State(state.clone()), multipart(&body).await).await;
         assert!(result.is_ok(), "empty files are within a zero-byte limit");
         let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM files WHERE file_size_bytes = 0")
-            .fetch_one(&state.db)
+            .fetch_one(sqlite_pool(&state.db).expect("test database should be SQLite"))
             .await
             .expect("metadata query should succeed");
         assert_eq!(count, 1);
@@ -331,7 +339,7 @@ mod tests {
             b"four"
         );
         let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM files")
-            .fetch_one(&state.db)
+            .fetch_one(sqlite_pool(&state.db).expect("test database should be SQLite"))
             .await
             .expect("metadata query should succeed");
         assert_eq!(rows, 1);
@@ -354,7 +362,7 @@ mod tests {
             0
         );
         let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM files")
-            .fetch_one(&state.db)
+            .fetch_one(sqlite_pool(&state.db).expect("test database should be SQLite"))
             .await
             .expect("metadata query should succeed");
         assert_eq!(count, 0);
@@ -389,7 +397,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 
         let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM files")
-            .fetch_one(&state.db)
+            .fetch_one(sqlite_pool(&state.db).expect("test database should be SQLite"))
             .await
             .expect("metadata query should succeed");
         assert_eq!(count, 0);

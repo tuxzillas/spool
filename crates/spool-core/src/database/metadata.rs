@@ -19,8 +19,8 @@ impl Database {
 
     pub async fn get_file_metadata(&self, hash: &str) -> Result<Option<String>, sqlx::Error> {
         match self {
-            Database::Sqlite(pool) => Ok(spool_sqlite::get_file_metadata(&pool, hash).await?),
-            Database::Postgres(pool) => Ok(spool_postgres::get_file_metadata(&pool, hash).await?),
+            Database::Sqlite(pool) => Ok(spool_sqlite::get_file_metadata(pool, hash).await?),
+            Database::Postgres(pool) => Ok(spool_postgres::get_file_metadata(pool, hash).await?),
         }
     }
 }
