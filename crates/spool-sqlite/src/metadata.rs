@@ -9,7 +9,7 @@ struct FileMetadata {
     mimetype: String,
 }
 
-pub async fn get_file_mimetype(db: &SqlitePool, hash: &str) -> Result<Option<String>, sqlx::Error> {
+pub async fn get_file_metadata(db: &SqlitePool, hash: &str) -> Result<Option<String>, sqlx::Error> {
     let result = query_as!(
         FileMetadata,
         r"
@@ -28,7 +28,7 @@ pub async fn get_file_mimetype(db: &SqlitePool, hash: &str) -> Result<Option<Str
 #[allow(clippy::expect_used)]
 #[cfg(test)]
 mod tests {
-    use super::get_file_mimetype;
+    use super::get_file_metadata;
     use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};
 
     async fn test_db() -> SqlitePool {
@@ -57,7 +57,7 @@ mod tests {
         .await
         .expect("file fixture should insert");
 
-        let mimetype = get_file_mimetype(&db, "abc123")
+        let mimetype = get_file_metadata(&db, "abc123")
             .await
             .expect("metadata query should succeed");
 
@@ -68,7 +68,7 @@ mod tests {
     async fn returns_none_for_unknown_hash() {
         let db = test_db().await;
 
-        let mimetype = get_file_mimetype(&db, "missing")
+        let mimetype = get_file_metadata(&db, "missing")
             .await
             .expect("metadata query should succeed");
 

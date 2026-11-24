@@ -27,7 +27,7 @@ pub async fn serve(
     else {
         return Err((StatusCode::NOT_FOUND, "File not found").into());
     };
-    let Some(mimetype) = spool_sqlite::get_file_mimetype(&state.db, &file_hash).await? else {
+    let Some(mimetype) = state.db.get_file_metadata(&file_hash).await? else {
         return Err((StatusCode::NOT_FOUND, "File not found").into());
     };
 

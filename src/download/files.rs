@@ -109,13 +109,14 @@ pub async fn download(
 
     let (hash_hex, fsize_bytes) = write.await??;
 
-    spool_sqlite::insert_file(
-        &state.db,
-        &hash_hex,
-        mimetype.as_deref().unwrap_or("application/octet-stream"),
-        i64::try_from(fsize_bytes).unwrap_or(0),
-    )
-    .await?;
+    state
+        .db
+        .insert_file(
+            &hash_hex,
+            mimetype.as_deref().unwrap_or("application/octet-stream"),
+            i64::try_from(fsize_bytes).unwrap_or(0),
+        )
+        .await?;
     Ok((
         StatusCode::CREATED,
         Json(format!(r"{}/{}", state.config.address, hash_hex)),

@@ -13,8 +13,9 @@ tempfile = "3.27.0"
 thiserror = "2.0.21"
 tokio = { version = "1.53.1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["io"] }
-sqlx = { version = "0.8", default-features = false, features = ["sqlite", "runtime-tokio", "macros", "migrate"] }
+sqlx = { version = "0.9.1", default-features = false, features = ["sqlite", "runtime-tokio", "macros", "migrate"] }
 spool-sqlite = { path = "crates/spool-sqlite" }
+spool-core = { path = "crates/spool-core" }
 serde = "1.0.229"
 toml = "1.1.8"
 tracing = "0.1.44"

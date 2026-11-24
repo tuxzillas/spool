@@ -9,7 +9,7 @@ struct FileMetadata {
     mimetype: String,
 }
 
-pub async fn get_file_mimetype(db: &PgPool, hash: &str) -> Result<Option<String>, sqlx::Error> {
+pub async fn get_file_metadata(db: &PgPool, hash: &str) -> Result<Option<String>, sqlx::Error> {
     let result = query_as!(
         FileMetadata,
         r"
@@ -28,7 +28,7 @@ pub async fn get_file_mimetype(db: &PgPool, hash: &str) -> Result<Option<String>
 #[allow(clippy::expect_used)]
 #[cfg(test)]
 mod tests {
-    use super::get_file_mimetype;
+    use super::get_file_metadata;
     use sqlx::{PgPool, postgres::PgPoolOptions};
 
     async fn test_db() -> Option<PgPool> {
@@ -58,7 +58,7 @@ mod tests {
         .await
         .expect("file fixture should insert");
 
-        let mimetype = get_file_mimetype(&db, "metadata-known")
+        let mimetype = get_file_metadata(&db, "metadata-known")
             .await
             .expect("metadata query should succeed");
 
@@ -69,7 +69,7 @@ mod tests {
     async fn returns_none_for_unknown_hash() {
         let Some(db) = test_db().await else { return };
 
-        let mimetype = get_file_mimetype(&db, "missing")
+        let mimetype = get_file_metadata(&db, "missing")
             .await
             .expect("metadata query should succeed");
 

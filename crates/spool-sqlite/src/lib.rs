@@ -5,4 +5,4 @@ mod files;
 mod metadata;
 
 pub use files::insert_file;
-pub use metadata::get_file_mimetype;
+pub use metadata::get_file_metadata;
